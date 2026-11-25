@@ -4,7 +4,10 @@ import type {
   PtzDirection,
   PtzMoveMode,
   PtzPreset,
+  OnboardingAnswer,
+  OnboardingStatus,
   SessionResponse,
+  SetupExistingResult,
   StatusResponse,
 } from '@kasa/shared';
 
@@ -13,6 +16,8 @@ export class ApiRequestError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** The server's own wording, when it sent one. `message` falls back to the HTTP status text. */
+    readonly serverMessage?: string,
   ) {
     super(message);
   }
@@ -35,6 +40,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       res.status,
       body.error ?? 'http_error',
       body.message ?? res.statusText,
+      body.message,
     );
   }
   if (res.status === 204) return undefined as T;
@@ -55,4 +61,22 @@ export const api = {
   ptzStop: () => post('/api/ptz/stop'),
   presets: () => request<PtzPreset[]>('/api/ptz/presets'),
   goToPreset: (index: number) => post(`/api/ptz/presets/${index}/go`),
+  setup: {
+    password: (password: string) => post('/api/setup/password', { password }),
+    existingCamera: (username: string, password: string, alias?: string) =>
+      post<SetupExistingResult>('/api/setup/existing-camera', {
+        username,
+        password,
+        ...(alias === undefined ? {} : { alias }),
+      }),
+    resetPassword: (password: string) => post('/api/setup/reset-password', { password }),
+    startOnboarding: (
+      mode: 'account' | 'local',
+      account?: { username: string; password: string },
+    ) => post<OnboardingStatus>('/api/setup/onboarding', { mode, ...(account ? { account } : {}) }),
+    onboarding: () => request<OnboardingStatus>('/api/setup/onboarding'),
+    answer: (answer: OnboardingAnswer) =>
+      post<OnboardingStatus>('/api/setup/onboarding/answer', answer),
+    cancelOnboarding: () => request<void>('/api/setup/onboarding', { method: 'DELETE' }),
+  },
 };

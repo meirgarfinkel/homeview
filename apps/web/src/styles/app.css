@@ -312,7 +312,8 @@ input[type='range'] {
   accent-color: var(--accent);
 }
 
-input[type='password'] {
+input[type='password'],
+input[type='text'] {
   font: inherit;
   padding: 10px 12px;
   border-radius: 10px;
@@ -505,6 +506,28 @@ input[type='password'] {
 }
 
 /* ---------- login ---------- */
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.choice-btn {
+  white-space: normal;
+  text-align: left;
+  justify-content: flex-start;
+  padding: 12px 14px;
+}
+
+.login-card h1:focus {
+  outline: none;
+}
+
+.login-card .row input {
+  flex: 1;
+  min-width: 0;
+}
 
 .login {
   min-height: 100dvh;
