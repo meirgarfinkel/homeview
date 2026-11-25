@@ -136,19 +136,37 @@ it('falls back to plain wording when the server sends no message', async () => {
   expect(alert.textContent).toMatch(/camera/i);
 });
 
-it('sends the other two camera choices to the onboarding callback', async () => {
+it('shows the TP-Link links, and each new-camera choice opens its onboarding screen', async () => {
   const user = userEvent.setup();
-  const onOnboarding = vi.fn();
-  fetchMock.mockResolvedValue(reply({ status: 204 }));
-  render(<SetupWizard onDone={() => {}} onOnboarding={onOnboarding} />);
+  fetchMock.mockImplementation((path, init) => {
+    if (path === '/api/setup/onboarding' && init?.method === 'POST') {
+      return Promise.resolve(
+        reply({ status: 202, body: { phase: 'reset-camera', autoWifi: false } }),
+      );
+    }
+    if (path === '/api/setup/onboarding' && init?.method === 'DELETE') {
+      return Promise.resolve(reply({ status: 204 }));
+    }
+    if (path === '/api/settings') return Promise.resolve(reply({ body: { camera: null } }));
+    return Promise.resolve(reply({ status: 204 }));
+  });
+  render(<SetupWizard onDone={() => {}} />);
   await user.type(screen.getByLabelText('Password'), 'sleepy-owl-42');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const link = await screen.findByRole('link', { name: /myproducts\.tp-link\.com/ });
   expect(link.getAttribute('href')).toBe('https://myproducts.tp-link.com');
   expect(link.getAttribute('target')).toBe('_blank');
   expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+
   await user.click(screen.getByRole('button', { name: /I have a TP-Link account/ }));
-  expect(onOnboarding).toHaveBeenLastCalledWith('account');
+  expect(await screen.findByRole('heading', { name: 'Your TP-Link account' })).toBeTruthy();
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+  await user.click(await screen.findByRole('button', { name: /I don't want an account/ }));
+  expect(await screen.findByRole('heading', { name: 'Reset the camera' })).toBeTruthy();
+  expect(calls('/api/setup/onboarding')).toEqual([{ mode: 'local' }]);
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(await screen.findByRole('heading', { name: 'Your camera' })).toBeTruthy();
 });
 
 it('retries once quietly when the server is restarting', async () => {

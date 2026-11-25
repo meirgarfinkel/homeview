@@ -7,6 +7,7 @@ import type {
   OnboardingAnswer,
   OnboardingStatus,
   SessionResponse,
+  SettingsResponse,
   SetupExistingResult,
   StatusResponse,
 } from '@kasa/shared';
@@ -61,6 +62,7 @@ export const api = {
   ptzStop: () => post('/api/ptz/stop'),
   presets: () => request<PtzPreset[]>('/api/ptz/presets'),
   goToPreset: (index: number) => post(`/api/ptz/presets/${index}/go`),
+  settings: () => request<SettingsResponse>('/api/settings'),
   setup: {
     password: (password: string) => post('/api/setup/password', { password }),
     existingCamera: (username: string, password: string, alias?: string) =>
