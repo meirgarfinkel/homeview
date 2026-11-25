@@ -1,13 +1,17 @@
+import http from 'node:http';
 import net from 'node:net';
 import type { FastifyInstance } from 'fastify';
+import { isLoopback } from './security/network.js';
 
 /**
  * Listen on one port for both HTTPS and plain HTTP.
  *
  * Fastify owns an HTTPS server that is never bound directly. A small TCP
  * front-end peeks at the first byte of each connection: a TLS ClientHello
- * (0x16) is handed to the HTTPS server, anything else gets a redirect to
- * the https:// URL, so typing http://192.168.1.20:8090 still works.
+ * (0x16) is handed to the HTTPS server. Plain HTTP from this computer is
+ * served as is, so http://localhost:8090 opens with no certificate warning.
+ * Plain HTTP from anywhere else gets a redirect to the https:// URL, so
+ * typing http://192.168.1.20:8090 still works.
  */
 
 const TLS_HANDSHAKE = 0x16;
@@ -22,35 +26,50 @@ export interface DualListener {
 
 export async function listenHttpsWithRedirect(
   app: FastifyInstance,
-  opts: { host: string; port: number; allowClient: (ip: string | undefined) => boolean },
+  opts: {
+    host: string;
+    port: number;
+    allowClient: (ip: string | undefined) => boolean;
+    /** Who gets plain HTTP. Decided from the TCP peer address, never a header. */
+    isLocalClient?: (ip: string | undefined) => boolean;
+  },
 ): Promise<DualListener> {
   await app.ready();
   const https = app.server;
+  const isLocalClient = opts.isLocalClient ?? isLoopback;
+  // Plain HTTP for this computer. Like the HTTPS server it never listens;
+  // the front-end hands it connections. The live WebSocket's upgrade
+  // handler is on app.server, so pass upgrades on to it.
+  const plain = http.createServer(app.routing);
+  plain.on('upgrade', (req, socket, head) => https.emit('upgrade', req, socket, head));
 
   let boundPort = opts.port;
   const sockets = trackSockets();
-  // The HTTPS server never listens itself, so Node doesn't track its
-  // connections and closeIdleConnections() does nothing. Track them here.
-  const tlsSockets = new Set<net.Socket>();
+  // Neither server listens itself, so Node doesn't track their connections
+  // and closeIdleConnections() does nothing. Track them here.
+  const handed = new Set<net.Socket>();
   const busy = new Set<net.Socket>();
-  https.on('secureConnection', (tls: net.Socket) => {
-    tlsSockets.add(tls);
-    tls.once('close', () => {
-      tlsSockets.delete(tls);
-      busy.delete(tls);
+  const trackConnection = (socket: net.Socket) => {
+    handed.add(socket);
+    socket.once('close', () => {
+      handed.delete(socket);
+      busy.delete(socket);
     });
-  });
-  https.on(
-    'request',
-    (req: { socket: net.Socket }, res: { once(e: 'close', f: () => void): void }) => {
-      busy.add(req.socket);
-      res.once('close', () => busy.delete(req.socket));
-    },
-  );
-  // Upgraded sockets belong to the WebSocket server, which closes them.
-  https.on('upgrade', (req: { socket: net.Socket }) => busy.add(req.socket));
+  };
+  https.on('secureConnection', trackConnection);
+  for (const server of [https, plain]) {
+    server.on(
+      'request',
+      (req: { socket: net.Socket }, res: { once(e: 'close', f: () => void): void }) => {
+        busy.add(req.socket);
+        res.once('close', () => busy.delete(req.socket));
+      },
+    );
+    // Upgraded sockets belong to the WebSocket server, which closes them.
+    server.on('upgrade', (req: { socket: net.Socket }) => busy.add(req.socket));
+  }
   const closeIdle = () => {
-    for (const tls of tlsSockets) if (!busy.has(tls)) tls.destroy();
+    for (const socket of handed) if (!busy.has(socket)) socket.destroy();
   };
   const front = net.createServer({ pauseOnConnect: true }, (socket) => {
     sockets.add(socket);
@@ -73,6 +92,9 @@ export async function listenHttpsWithRedirect(
       socket.unshift(first);
       if (first[0] === TLS_HANDSHAKE) {
         https.emit('connection', socket);
+      } else if (isLocalClient(socket.remoteAddress)) {
+        trackConnection(socket);
+        plain.emit('connection', socket);
       } else {
         readRequestHead(socket, (head) => redirectToHttps(socket, head, boundPort));
       }

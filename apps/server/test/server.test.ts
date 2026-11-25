@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import http from 'node:http';
 import https from 'node:https';
 import net, { type AddressInfo } from 'node:net';
 import type os from 'node:os';
@@ -9,6 +10,7 @@ import WebSocket from 'ws';
 import { LIVE_WS_PATH } from '@kasa/shared';
 import { accessUnits, FakeCamera, LoopingFrameProducer } from '../src/dev/fakeCamera.js';
 import { hashPassword } from '../src/security/passwordHash.js';
+import { CLOSE_GRACE_MS } from '../src/listen.js';
 import { lanAddress, startServer, type RunningServer } from '../src/server.js';
 import type * as ApiModule from '../src/routes/api.js';
 import { SettingsStore } from '../src/settings/store.js';
@@ -310,6 +312,140 @@ describe('rebuilding while clients are connected', () => {
       const { s, cleanup } = await connected();
       try {
         await within(s.stop(), 5000, 'stop()');
+      } finally {
+        cleanup();
+      }
+    });
+
+    /** The same, but as this computer sees it: plain HTTP and ws://localhost. */
+    async function connectedLocally() {
+      const { s, cleanup: closeHttps } = await connected();
+      const agent = new http.Agent({ keepAlive: true });
+      const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        http
+          .get(`${s.localUrl}/api/session`, { agent }, (r) => {
+            r.resume();
+            r.on('end', () => resolve(r));
+          })
+          .on('error', reject);
+      });
+      expect(res.statusCode).toBe(200);
+      const ws = new WebSocket(`ws://localhost:${s.port}${LIVE_WS_PATH}`, {
+        origin: s.localUrl,
+      });
+      ws.on('error', () => undefined);
+      await new Promise((resolve, reject) => {
+        ws.once('open', resolve);
+        ws.once('unexpected-response', () => reject(new Error('live socket refused')));
+      });
+      const cleanup = () => {
+        closeHttps();
+        agent.destroy();
+        ws.terminate();
+      };
+      return { s, res, cleanup };
+    }
+
+    it('serves this computer over plain HTTP, including the live WebSocket', async () => {
+      const { s, res, cleanup } = await connectedLocally();
+      try {
+        expect(s.localUrl).toBe(`http://localhost:${s.port}`);
+        expect(String(res.headers['content-security-policy'])).toContain(
+          `ws://localhost:${s.port}`,
+        );
+      } finally {
+        cleanup();
+        await s.stop();
+      }
+    });
+
+    // Connecting to this machine's own LAN address arrives from that address,
+    // not loopback, so it stands in for another computer.
+    it.skipIf(!lanAddress())('still sends other computers to HTTPS', async () => {
+      const lan = lanAddress()!;
+      const s = await startServer({
+        env: {
+          ...quiet,
+          ...fakeEnv,
+          HOST: '0.0.0.0',
+          HTTPS: 'true',
+          KASA_USERNAME: USER,
+          KASA_PASSWORD: PASS,
+          ALLOW_NO_PASSWORD: 'true',
+        },
+        settings: new SettingsStore(tmp()),
+        dataDir,
+        logger: silentLogger,
+      });
+      try {
+        const res = await fetch(`http://${lan}:${s.port}/api/health`, { redirect: 'manual' });
+        expect(res.status).toBe(308);
+        expect(res.headers.get('location')).toBe(`https://${lan}:${s.port}/api/health`);
+      } finally {
+        await s.stop();
+      }
+    });
+
+    it('marks the session cookie Secure only on HTTPS', async () => {
+      const s = await startServer({
+        env: {
+          ...quiet,
+          ...fakeEnv,
+          HTTPS: 'true',
+          KASA_USERNAME: USER,
+          KASA_PASSWORD: PASS,
+          VIEWER_PASSWORD: 'long enough',
+        },
+        settings: new SettingsStore(tmp()),
+        dataDir,
+        logger: silentLogger,
+      });
+      const login = (base: string) =>
+        new Promise<string>((resolve, reject) => {
+          const body = JSON.stringify({ password: 'long enough' });
+          const req = (base.startsWith('https') ? https : http).request(
+            `${base}/api/login`,
+            {
+              method: 'POST',
+              rejectUnauthorized: false,
+              headers: { 'content-type': 'application/json', origin: base },
+            },
+            (res) => {
+              res.resume();
+              res.on('end', () => resolve(String(res.headers['set-cookie'])));
+            },
+          );
+          req.on('error', reject);
+          req.end(body);
+        });
+      try {
+        const plain = await login(s.localUrl);
+        expect(plain).toContain('HttpOnly');
+        expect(plain).not.toContain('Secure');
+        expect(await login(`https://localhost:${s.port}`)).toContain('Secure');
+      } finally {
+        await s.stop();
+      }
+    });
+
+    it('reload() finishes with a plain-HTTP keep-alive and ws://localhost open', async () => {
+      const { s, cleanup } = await connectedLocally();
+      try {
+        await within(s.reload(), 5000, 'reload()');
+      } finally {
+        cleanup();
+        await s.stop();
+      }
+    });
+
+    it('stop() finishes with a plain-HTTP keep-alive and ws://localhost open', async () => {
+      const { s, cleanup } = await connectedLocally();
+      try {
+        const started = Date.now();
+        await within(s.stop(), 5000, 'stop()');
+        // Idle plain-HTTP connections are closed at once, not left for the
+        // force-close after the grace period.
+        expect(Date.now() - started).toBeLessThan(CLOSE_GRACE_MS);
       } finally {
         cleanup();
       }

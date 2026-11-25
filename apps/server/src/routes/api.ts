@@ -55,7 +55,6 @@ function sendError(reply: FastifyReply, err: unknown): FastifyReply {
 
 export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Promise<void> {
   const { camera, hub, sessions } = deps;
-  const secure = Boolean(deps.tls);
   const limiter = new LoginRateLimiter();
 
   app.get('/api/health', async () => ({ ok: true }));
@@ -95,14 +94,17 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
       limiter.reset(req.ip);
       const { token, expires } = sessions.issue();
       return reply
-        .header('Set-Cookie', sessionCookie(token, expires, secure))
+        .header('Set-Cookie', sessionCookie(token, expires, req.protocol === 'https'))
         .code(204)
         .send();
     },
   );
 
-  app.post('/api/logout', async (_req, reply) =>
-    reply.header('Set-Cookie', clearedSessionCookie(secure)).code(204).send(),
+  app.post('/api/logout', async (req, reply) =>
+    reply
+      .header('Set-Cookie', clearedSessionCookie(req.protocol === 'https'))
+      .code(204)
+      .send(),
   );
 
   if (camera && hub) {

@@ -50,10 +50,14 @@ describe('IP allowlist', () => {
     expect(normalizeIp('fe80::1%eth0')).toBe('fe80::1');
   });
 
-  it('recognises loopback clients', () => {
-    expect(['127.0.0.1', '::1', '::ffff:127.0.0.1'].every(isLoopback)).toBe(true);
-    expect(['192.168.1.20', '::ffff:10.0.0.1', undefined].some(isLoopback)).toBe(false);
-  });
+  it.each(['127.0.0.1', '::1', '::ffff:127.0.0.1', '127.8.9.10'])(
+    'treats %s as this computer',
+    (ip) => expect(isLoopback(ip)).toBe(true),
+  );
+  it.each(['192.168.1.20', '10.0.0.7', '::ffff:192.168.1.20', undefined])(
+    'does not treat %s as this computer',
+    (ip) => expect(isLoopback(ip)).toBe(false),
+  );
 });
 
 describe('Host allowlist (DNS rebinding)', () => {

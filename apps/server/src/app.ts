@@ -134,7 +134,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         "style-src 'self'",
         "img-src 'self' data: blob:",
         "media-src 'self' blob:",
-        `connect-src 'self' ${deps.tls ? '' : `ws://${host} `}wss://${host}`,
+        `connect-src 'self' ${req.protocol === 'https' ? '' : `ws://${host} `}wss://${host}`,
         "object-src 'none'",
         "base-uri 'none'",
         "frame-ancestors 'none'",
