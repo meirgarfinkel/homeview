@@ -16,7 +16,12 @@ import {
   isSameOrigin,
   localNetworkCidrs,
 } from './security/network.js';
-import { parseCookies, SESSION_COOKIE, SessionManager } from './security/session.js';
+import {
+  parseCookies,
+  passwordCheckFromPlain,
+  SESSION_COOKIE,
+  SessionManager,
+} from './security/session.js';
 
 export interface CameraService {
   info(): Promise<CameraInfo>;
@@ -55,7 +60,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const allowIp = createIpAllowlist(clientAllowlist(config));
   const allowHost = createHostAllowlist(config.allowedHosts);
   const sessions = config.viewerPassword
-    ? new SessionManager(config.viewerPassword, config.sessionSecret)
+    ? new SessionManager(passwordCheckFromPlain(config.viewerPassword), config.sessionSecret)
     : undefined;
 
   const isAuthenticated = (req: FastifyRequest) =>

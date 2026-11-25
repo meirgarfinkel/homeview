@@ -74,7 +74,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
           .code(429)
           .send({ error: 'rate_limited', message: 'Too many attempts. Try again later.' });
       }
-      if (!sessions.checkPassword(req.body.password)) {
+      if (!(await sessions.checkPassword(req.body.password))) {
         req.log.warn({ ip: req.ip }, 'Failed viewer login');
         return reply.code(401).send({ error: 'bad_password', message: 'Wrong password' });
       }
