@@ -1,4 +1,14 @@
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Logger } from '../logger.js';
@@ -108,10 +118,7 @@ export class SettingsStore {
             },
           }),
     };
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(disk, null, 2)}\n`, { mode: 0o600 });
-    chmodSync(tmp, 0o600);
-    renameSync(tmp, this.file);
+    writeDurably(this.file, `${JSON.stringify(disk, null, 2)}\n`);
   }
 
   /**
@@ -149,5 +156,31 @@ export class SettingsStore {
     } catch (err) {
       this.logger?.error({ err }, 'the settings file is damaged and could not be kept');
     }
+  }
+}
+
+/**
+ * Replace a file so that a power cut leaves the old or the new one, never an
+ * empty file: write a temporary copy, flush it to disk, rename it over the
+ * old one, then flush the folder so the rename itself is on disk.
+ */
+function writeDurably(file: string, text: string): void {
+  const tmp = `${file}.tmp`;
+  const fd = openSync(tmp, 'w', 0o600);
+  try {
+    writeSync(fd, text);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, file);
+  // Windows can't open a folder to flush it, and NTFS keeps the rename anyway.
+  if (process.platform === 'win32') return;
+  const dir = openSync(path.dirname(file), 'r');
+  try {
+    fsyncSync(dir);
+  } finally {
+    closeSync(dir);
   }
 }
