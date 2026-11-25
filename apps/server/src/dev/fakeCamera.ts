@@ -123,6 +123,8 @@ export interface FakeCameraOptions {
      * answering discovery, as one given a wrong Wi-Fi password would.
      */
     ignoreUplink?: boolean;
+    /** Answer set_uplink this late, to test a cancel while it is in flight. */
+    uplinkReplyMs?: number;
   };
 }
 
@@ -374,8 +376,13 @@ export class FakeCamera {
         out[module] = moduleOut;
       }
       // A real camera takes a while to answer a move.
-      const moved = this.commands.at(-1)?.method === 'set_move';
-      const delay = moved ? (this.opts.ptzMotor?.replyMs ?? 0) : 0;
+      const last = this.commands.at(-1)?.method;
+      const delay =
+        last === 'set_move'
+          ? (this.opts.ptzMotor?.replyMs ?? 0)
+          : last === 'set_uplink'
+            ? (this.opts.setupMode?.uplinkReplyMs ?? 0)
+            : 0;
       if (delay > 0) setTimeout(() => reply(out), delay);
       else reply(out);
     });

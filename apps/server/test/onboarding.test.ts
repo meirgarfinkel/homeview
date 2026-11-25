@@ -5,7 +5,7 @@ import {
   LoopingFrameProducer,
   type FakeCameraOptions,
 } from '../src/dev/fakeCamera.js';
-import { Onboarding, OnboardingStateError } from '../src/setup/onboarding.js';
+import { Onboarding, OnboardingError, OnboardingStateError } from '../src/setup/onboarding.js';
 import { createWifiSwitcher, type WifiSwitcher } from '../src/setup/wifiSwitcher.js';
 import { fixture, silentLogger, waitFor } from './helpers.js';
 
@@ -216,6 +216,111 @@ describe('Onboarding', () => {
     await job.cancel();
     expect(switcher.returnHome).not.toHaveBeenCalled();
     expect(job.status().phase).toBe('failed');
+  });
+
+  describe('cancel while a step is in flight', () => {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    /** An auto switcher whose joins wait until the test settles them. */
+    function heldSwitcher() {
+      const joins: { resolve(ssid: string): void; reject(err: Error): void }[] = [];
+      return {
+        joins,
+        auto: true as const,
+        joinCameraNetwork: vi.fn(
+          () =>
+            new Promise<string | undefined>((resolve, reject) => joins.push({ resolve, reject })),
+        ),
+        returnHome: vi.fn(async () => {}),
+      };
+    }
+
+    it('an old send that fails late does not take a newer run off the camera Wi-Fi', async () => {
+      await fake.stop();
+      await startFake({ rejectUplinkField: 'ssid', uplinkReplyMs: 600 });
+      const switcher = testSwitcher();
+      const job = new Onboarding({ mode: 'local', switcher, onSaved: () => {}, ...fakeTargets });
+      job.answer({ type: 'camera-reset' });
+      await waitFor(() => job.status().phase === 'choose-wifi');
+      job.answer({ type: 'wifi', ssid: 'HomeNet', passphrase: 'x', alias: 'nursery' });
+      await waitFor(() => fake.commands.some((c) => c.method === 'set_uplink'));
+      expect(job.status().phase).toBe('sending');
+      await job.cancel();
+      expect(switcher.returnHome).toHaveBeenCalledTimes(1);
+
+      job.answer({ type: 'retry' });
+      job.answer({ type: 'camera-reset' });
+      await waitFor(() => job.status().phase === 'choose-wifi');
+      // The old set_uplink is rejected now, long after the cancel.
+      await sleep(900);
+      expect(switcher.returnHome).toHaveBeenCalledTimes(1);
+      expect(job.status().phase).toBe('choose-wifi');
+
+      // The new run still owns the camera Wi-Fi, so its cancel takes the computer home.
+      await job.cancel();
+      expect(switcher.returnHome).toHaveBeenCalledTimes(2);
+    });
+
+    it("an old send that succeeds late does not change the newer run's retry point", async () => {
+      await fake.stop();
+      await startFake({ uplinkReplyMs: 400 });
+      const switcher = heldSwitcher();
+      const job = new Onboarding({ mode: 'local', switcher, onSaved: () => {}, ...fakeTargets });
+      job.answer({ type: 'camera-reset' });
+      switcher.joins[0]!.resolve('Kasa_Cam_TEST');
+      await waitFor(() => job.status().phase === 'choose-wifi');
+      job.answer({ type: 'wifi', ssid: 'HomeNet', passphrase: 'x', alias: 'nursery' });
+      await waitFor(() => fake.commands.some((c) => c.method === 'set_uplink'));
+      await job.cancel();
+
+      job.answer({ type: 'retry' });
+      job.answer({ type: 'camera-reset' });
+      await waitFor(() => switcher.joins.length === 2);
+      // The old set_uplink is accepted while the new run is still joining.
+      await sleep(700);
+      switcher.joins[1]!.reject(new OnboardingError('Could not join the camera Wi-Fi.'));
+      await waitFor(() => job.status().phase === 'failed');
+      expect(job.status().error).toEqual({
+        message: 'Could not join the camera Wi-Fi.',
+        retryFrom: 'join-camera-wifi',
+      });
+    });
+
+    it('a join that finishes after the cancel still goes back home', async () => {
+      const switcher = heldSwitcher();
+      const job = new Onboarding({ mode: 'local', switcher, onSaved: () => {}, ...fakeTargets });
+      job.answer({ type: 'camera-reset' });
+      await waitFor(() => switcher.joins.length === 1);
+      await job.cancel();
+      expect(switcher.returnHome).not.toHaveBeenCalled();
+      switcher.joins[0]!.resolve('Kasa_Cam_TEST');
+      await waitFor(() => switcher.returnHome.mock.calls.length === 1);
+      await sleep(100);
+      expect(switcher.returnHome).toHaveBeenCalledTimes(1);
+      expect(job.status().phase).toBe('failed');
+    });
+
+    it('a cancel before finishing starts sends nothing to the camera', async () => {
+      const job: Onboarding = new Onboarding({
+        mode: 'account',
+        account: ACCOUNT,
+        switcher: testSwitcher(),
+        onSaved: () => {},
+        ...fakeTargets,
+        onEvent(e) {
+          if (e.type === 'status' && e.status.phase === 'finishing') void job.cancel();
+        },
+      });
+      job.answer({ type: 'camera-reset' });
+      await waitFor(() => job.status().phase === 'choose-wifi');
+      job.answer({ type: 'wifi', ssid: 'HomeNet', passphrase: 'x', alias: 'nursery' });
+      await waitFor(() => job.status().phase === 'failed');
+      await sleep(300);
+      expect(fake.bound).toBe(false);
+      const methods = fake.commands.map((c) => c.method);
+      expect(methods).not.toContain('set_alias');
+      expect(methods).not.toContain('set_bind');
+    });
   });
 
   it('needs the account to link one', () => {

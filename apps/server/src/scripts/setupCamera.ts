@@ -187,6 +187,8 @@ async function main(): Promise<void> {
     setupAddresses: testTargets ?? SETUP_ADDRESSES,
     apiPort,
     discovery: { ...(testTargets ? { targets: testTargets } : {}), port: discoveryPort },
+    // The person has already said they joined the camera's Wi-Fi, so look for 30 s as before.
+    timeouts: { cameraWifiMs: 30_000 },
     extraLogins: setupLogin(),
     timeZone: process.env['KASA_TIMEZONE'],
     logger: createLogger('silent'),

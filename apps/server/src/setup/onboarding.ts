@@ -117,7 +117,8 @@ export class Onboarding {
   private state: OnboardingStatus;
   /** Bumped by every new run and by cancel(), so an old run stops at its next step. */
   private gen = 0;
-  private onCameraNetwork = false;
+  /** The run that put this computer on the camera's Wi-Fi, while it is still there. */
+  private cameraNetworkRun: number | undefined;
   private retryFrom: OnboardingPhase = 'reset-camera';
   private cam: DiscoveredDevice | undefined;
   private login: WorkingLogin | undefined;
@@ -181,11 +182,9 @@ export class Onboarding {
   }
 
   private async fail(gen: number, err: unknown): Promise<void> {
-    if (gen !== this.gen) {
-      // Cancelled while a step was in flight, which may have joined the camera's network.
-      await this.afterStop();
-      return;
-    }
+    // A cancelled run has nothing left to clean up: cancel() took the
+    // computer home, and a join that finished late went home in joinAndScan.
+    if (gen !== this.gen) return;
     const message =
       err instanceof OnboardingError ? err.message : `Setup failed: ${(err as Error).message}`;
     this.opts.logger.warn({ err, phase: this.state.phase }, 'camera onboarding failed');
@@ -198,7 +197,7 @@ export class Onboarding {
   /** After cancel: only the automatic switcher can take the computer home. */
   private async afterStop(): Promise<void> {
     if (!this.opts.switcher.auto) {
-      this.onCameraNetwork = false;
+      this.cameraNetworkRun = undefined;
       return;
     }
     await this.leaveCameraNetwork().catch((err: unknown) =>
@@ -207,9 +206,14 @@ export class Onboarding {
   }
 
   private async leaveCameraNetwork(): Promise<void> {
-    if (!this.onCameraNetwork) return;
-    this.onCameraNetwork = false;
+    if (this.cameraNetworkRun === undefined) return;
+    this.cameraNetworkRun = undefined;
     await this.opts.switcher.returnHome();
+  }
+
+  /** No run is going: the job waits for a reset or a retry. */
+  private idle(): boolean {
+    return this.state.phase === 'failed' || this.state.phase === 'reset-camera';
   }
 
   private check(gen: number): void {
@@ -220,8 +224,18 @@ export class Onboarding {
     this.retryFrom = 'join-camera-wifi';
     this.set('join-camera-wifi');
     const network = await this.opts.switcher.joinCameraNetwork();
-    this.onCameraNetwork = true;
-    this.check(gen);
+    if (gen !== this.gen) {
+      // Cancelled during the join. Go home, unless a newer run wants this network.
+      if (this.opts.switcher.auto && this.idle() && this.cameraNetworkRun === undefined) {
+        await this.opts.switcher
+          .returnHome()
+          .catch((err: unknown) =>
+            this.opts.logger.warn({ err }, 'could not return to the home Wi-Fi'),
+          );
+      }
+      throw new Stale('cancelled');
+    }
+    this.cameraNetworkRun = gen;
     if (network) this.set('join-camera-wifi', { cameraNetwork: network });
 
     this.note('Looking for the camera');
@@ -278,13 +292,13 @@ export class Onboarding {
       wpaMode: scanned?.wpaMode,
       encryption: scanned?.encryption,
     });
+    this.check(gen);
     // The camera has left its setup network; starting over needs a reset.
     this.retryFrom = 'reset-camera';
     this.note('Wi-Fi details sent. The camera is switching networks.');
     this.note(
       `(Camera accepted: ${JSON.stringify(joined.accepted)} after ${joined.attempts} tries.)`,
     );
-    this.check(gen);
 
     this.set('return-home');
     await this.leaveCameraNetwork();
@@ -316,13 +330,14 @@ export class Onboarding {
     this.set('finishing');
     const target = this.target(onHome.host);
     const homeLogin = await findWorkingLogin(target, [login.candidate]);
-    this.check(gen);
     if (!homeLogin) throw new OnboardingError('The camera stopped accepting the setup login.');
     const alias = wifi.alias || cam.alias || 'nursery';
     const zone = this.opts.timeZone || hostTimeZone();
     const account = this.opts.mode === 'account' ? this.opts.account : undefined;
     const warnings: string[] = [];
     let linked = false;
+    // Last point to stop: finishSetup can link the account, which can't be undone from here.
+    this.check(gen);
     try {
       const result = await finishSetup(homeLogin.client, {
         alias,
