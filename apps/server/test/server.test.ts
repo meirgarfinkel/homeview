@@ -14,7 +14,7 @@ import { CLOSE_GRACE_MS } from '../src/listen.js';
 import { lanAddress, startServer, type RunningServer } from '../src/server.js';
 import type * as ApiModule from '../src/routes/api.js';
 import { SettingsStore } from '../src/settings/store.js';
-import { fixture, silentLogger, waitFor } from './helpers.js';
+import { fixture, silentLogger, waitFor, within } from './helpers.js';
 import { TEST_PAGE_MARKER } from './setup/staticDir.js';
 
 // Test only: add a route that awaits deps.reload(), as the setup routes will.
@@ -32,15 +32,6 @@ vi.mock('../src/routes/api.js', async (importOriginal) => {
     },
   };
 });
-
-/** Reject if the promise is still pending after ms. */
-function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${what} still pending after ${ms} ms`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
 
 const USER = 'parent@example.com';
 const PASS = 'correct horse';
@@ -124,8 +115,10 @@ describe('startServer', () => {
       settings: new SettingsStore(tmp()),
       dataDir: tmp(),
     });
-    expect(s.port).toBe(taken + 1);
-    expect(s.localUrl).toBe(`http://localhost:${taken + 1}`);
+    // Another program may hold taken + 1 too, so any of the next ports will do.
+    expect(s.port).toBeGreaterThan(taken);
+    expect(s.port).toBeLessThanOrEqual(taken + 9);
+    expect(s.localUrl).toBe(`http://localhost:${s.port}`);
     await s.stop();
     blocker.close();
   });
@@ -232,6 +225,38 @@ describe('lanAddress', () => {
         wlan0: [iface('192.168.1.20')],
       }),
     ).toBe('192.168.1.20');
+  });
+
+  const iface = (address: string) =>
+    ({ address, family: 'IPv4', internal: false }) as os.NetworkInterfaceInfo;
+
+  it('keeps a home network in the 172.16-31 range', () => {
+    expect(lanAddress({ docker0: [iface('172.17.0.1')], wlan0: [iface('172.20.10.4')] })).toBe(
+      '172.20.10.4',
+    );
+  });
+
+  it('skips Windows virtual machine, WSL and VPN adapters', () => {
+    expect(
+      lanAddress({
+        'vEthernet (WSL)': [iface('172.28.112.1')],
+        'vEthernet (Default Switch)': [iface('172.24.64.1')],
+        'VMware Network Adapter VMnet8': [iface('192.168.200.1')],
+        'VirtualBox Host-Only Network': [iface('192.168.56.1')],
+        'OpenVPN TAP-Windows6': [iface('10.8.0.2')],
+        'Wi-Fi': [iface('192.168.1.20')],
+      }),
+    ).toBe('192.168.1.20');
+  });
+
+  it('skips macOS VM bridges and tunnels', () => {
+    expect(
+      lanAddress({
+        bridge100: [iface('192.168.64.1')],
+        utun3: [iface('10.0.0.2')],
+        en0: [iface('10.0.1.7')],
+      }),
+    ).toBe('10.0.1.7');
   });
 });
 

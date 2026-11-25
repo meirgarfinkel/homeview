@@ -60,21 +60,14 @@ export class PortsInUseError extends Error {
 const PORT_ATTEMPTS = 10;
 const CAMERA_RETRY_MS = 30_000;
 
-/** This computer's address on the home network, skipping container and VPN interfaces. */
+/** This computer's address on the home network: a private IPv4 on an interface that isn't a container, VM or VPN one. */
 export function lanAddress(
   interfaces: ReturnType<typeof os.networkInterfaces> = os.networkInterfaces(),
 ): string | undefined {
   for (const [name, addrs] of Object.entries(interfaces)) {
     if (VIRTUAL_INTERFACE.test(name)) continue;
     for (const a of addrs ?? []) {
-      if (
-        a.family === 'IPv4' &&
-        !a.internal &&
-        isPrivateAddress(a.address) &&
-        !a.address.startsWith('172.')
-      ) {
-        return a.address;
-      }
+      if (a.family === 'IPv4' && !a.internal && isPrivateAddress(a.address)) return a.address;
     }
   }
   return undefined;

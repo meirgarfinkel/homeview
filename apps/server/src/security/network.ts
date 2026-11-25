@@ -63,9 +63,14 @@ export function createIpAllowlist(
   };
 }
 
-/** Interfaces created by containers, VMs and VPNs rather than the home LAN. */
+/**
+ * Interfaces created by containers, VMs and VPNs rather than the home LAN.
+ * Linux and macOS names start with a short prefix (docker0, virbr0, utun3,
+ * bridge100); Windows names the connection after the adapter
+ * ("vEthernet (WSL)", "VMware Network Adapter VMnet8").
+ */
 export const VIRTUAL_INTERFACE =
-  /^(docker|br-|veth|virbr|vmnet|vboxnet|lxc|lxd|cni|flannel|podman|tun|tap|wg|utun)/i;
+  /^(docker|br-|veth|virbr|vmnet|vboxnet|lxc|lxd|cni|flannel|podman|tun|tap|wg|utun|bridge|zt|tailscale)|vethernet|hyper-v|wsl|vmware|virtualbox|tap-windows|openvpn|wireguard|zerotier|tailscale|nordlynx|hamachi|bluetooth/i;
 
 type InterfaceMap = ReturnType<typeof os.networkInterfaces>;
 

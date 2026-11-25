@@ -35,8 +35,9 @@ export async function discoverCameras(cfg: Config['camera']): Promise<Discovered
 
 /**
  * Work out which IP to talk to. With KASA_HOST set, use it (after checking
- * it is a LAN address); otherwise broadcast discovery and pick the camera,
- * by KASA_ALIAS if several answer.
+ * it is a LAN address); otherwise broadcast discovery and pick the camera
+ * by its saved name (KASA_ALIAS). When only one camera answers, it is used
+ * even if its name changed.
  */
 export async function locateCamera(
   cfg: Config['camera'],
@@ -65,12 +66,18 @@ export async function locateCamera(
   let chosen = cameras[0]!;
   if (cfg.alias) {
     const match = cameras.find((c) => c.alias.toLowerCase() === cfg.alias!.toLowerCase());
-    if (!match) {
+    if (!match && cameras.length === 1) {
+      // Renamed in the Kasa app since it was saved. With one camera there is no doubt.
+      logger.warn(
+        { saved: cfg.alias, found: chosen.alias, host: chosen.host },
+        'The camera has a new name; using the only camera found',
+      );
+    } else if (!match) {
       throw new CameraLocateError(
         `No camera named "${cfg.alias}". Found: ${cameras.map((c) => `${c.alias} (${c.host})`).join(', ')}`,
       );
     }
-    chosen = match;
+    if (match) chosen = match;
   } else if (cameras.length > 1) {
     logger.warn(
       { cameras: cameras.map((c) => ({ alias: c.alias, host: c.host })) },

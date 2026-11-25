@@ -10,7 +10,7 @@ import { hashPassword } from '../src/security/passwordHash.js';
 import { startServer, type RunningServer } from '../src/server.js';
 import type { WifiSwitcher } from '../src/setup/wifiSwitcher.js';
 import { SettingsStore } from '../src/settings/store.js';
-import { fixture, silentLogger, waitFor } from './helpers.js';
+import { fixture, silentLogger, waitFor, within } from './helpers.js';
 
 const USER = 'parent@example.com';
 const PASS = 'correct horse';
@@ -247,6 +247,29 @@ describe('POST /api/setup/existing-camera', () => {
     });
     expect(settings.load().camera).toBeUndefined();
   });
+
+  it.skipIf(process.platform !== 'linux')(
+    'says the camera was unreachable when one rejects the login and another could not be reached',
+    async () => {
+      // Answers discovery on 127.0.0.2, but nothing listens there on the API port.
+      const silent = newFake('fake playroom');
+      await silent.start('127.0.0.2', 0, 0, ports.discoveryPort);
+      try {
+        const settings = new SettingsStore(tmp());
+        const s = await start(settings, { KASA_DISCOVERY_TARGETS: '127.0.0.1,127.0.0.2' });
+        const res = await post(s, '/api/setup/existing-camera', {
+          username: USER,
+          password: 'not the password',
+        });
+        // The one that could not be reached may be the right one, so don't blame the password.
+        expect(res.status).toBe(502);
+        expect(await res.json()).toMatchObject({ error: 'camera-unreachable' });
+        expect(settings.load().camera).toBeUndefined();
+      } finally {
+        await silent.stop();
+      }
+    },
+  );
 
   it('reports when no camera answers', async () => {
     const gone = newFake();
@@ -529,6 +552,18 @@ describe('camera onboarding routes', () => {
     // A kept-alive connection from before the reload may have been closed.
     const after = await status(s).catch(() => status(s));
     expect(after).toMatchObject({ phase: 'choose-wifi' });
+  });
+
+  it('stop() during a camera setup takes the computer back home and settles', async () => {
+    const { s, sw } = await startOnboardable();
+    await post(s, '/api/setup/onboarding', { mode: 'local' });
+    await post(s, '/api/setup/onboarding/answer', { type: 'camera-reset' });
+    await waitForPhase(s, 'choose-wifi');
+    expect(sw.returnHome).not.toHaveBeenCalled();
+    await within(s.stop(), 5000, 'stop()');
+    expect(sw.returnHome).toHaveBeenCalledTimes(1);
+    // The port is closed: nothing answers any more.
+    await expect(fetch(`${s.localUrl}/api/health`)).rejects.toThrow();
   });
 
   it('after setup, needs a session; and refuses other websites', async () => {

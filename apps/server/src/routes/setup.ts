@@ -265,9 +265,11 @@ export async function checkCameraLogin(
   );
   const working = cameras.filter((_, i) => outcomes[i] === 'ok');
   if (working.length === 0) {
-    return outcomes.includes('rejected')
-      ? { fail: { status: 401, body: wrongLogin } }
-      : { fail: { status: 502, body: unreachable } };
+    // A camera that couldn't be reached may be the right one, so only blame
+    // the login when every camera answered and said no.
+    return outcomes.includes('unreachable')
+      ? { fail: { status: 502, body: unreachable } }
+      : { fail: { status: 401, body: wrongLogin } };
   }
   if (working.length > 1 && !alias) return { choose: working.map(toSetupCamera) };
   return { chosen: working[0]! };

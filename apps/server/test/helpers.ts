@@ -38,3 +38,12 @@ export function boxes(
   }
   return out;
 }
+
+/** Fails with a clear message if the promise hasn't settled within ms. */
+export function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} still pending after ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
