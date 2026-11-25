@@ -41,7 +41,12 @@ export interface AppDeps {
   logger?: Logger;
   /** Serve HTTPS with this key pair. */
   tls?: { key: string; cert: string };
-  /** Re-read settings and rebuild the app on the same port. */
+  /**
+   * Re-read settings and rebuild the app on the same port. Safe to await in a
+   * route handler: it resolves once the new app is built, and the switch to it
+   * starts after that, so the handler can still reply. It rejects if the new
+   * settings can't be loaded, and the old app keeps running.
+   */
   reload?: () => Promise<void>;
   hooks?: ServerHooks;
   /** True inside the desktop app. Defaults to config.desktop. */

@@ -1,16 +1,43 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import https from 'node:https';
 import net, { type AddressInfo } from 'node:net';
 import type os from 'node:os';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { LIVE_WS_PATH } from '@kasa/shared';
 import { accessUnits, FakeCamera, LoopingFrameProducer } from '../src/dev/fakeCamera.js';
 import { hashPassword } from '../src/security/passwordHash.js';
 import { lanAddress, startServer, type RunningServer } from '../src/server.js';
+import type * as ApiModule from '../src/routes/api.js';
 import { SettingsStore } from '../src/settings/store.js';
-import { fixture, silentLogger } from './helpers.js';
+import { fixture, silentLogger, waitFor } from './helpers.js';
+
+// Test only: add a route that awaits deps.reload(), as the setup routes will.
+vi.mock('../src/routes/api.js', async (importOriginal) => {
+  const real = await importOriginal<typeof ApiModule>();
+  return {
+    ...real,
+    registerApiRoutes: async (...args: Parameters<typeof real.registerApiRoutes>) => {
+      const [app, deps] = args;
+      app.get('/api/test-reload', async () => {
+        await deps.reload?.();
+        return { reloaded: true };
+      });
+      await real.registerApiRoutes(...args);
+    },
+  };
+});
+
+/** Reject if the promise is still pending after ms. */
+function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} still pending after ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 const USER = 'parent@example.com';
 const PASS = 'correct horse';
@@ -202,5 +229,90 @@ describe('lanAddress', () => {
         wlan0: [iface('192.168.1.20')],
       }),
     ).toBe('192.168.1.20');
+  });
+});
+
+describe('rebuilding while clients are connected', () => {
+  it('lets a route await deps.reload() and still answer', async () => {
+    const settings = new SettingsStore(tmp());
+    const s = await start({ ...quiet, ...fakeEnv, ALLOW_NO_PASSWORD: 'true' }, settings);
+    expect(s.setupComplete()).toBe(false);
+    settings.save({ camera: { username: USER, password: PASS, localOnly: false } });
+    const res = await within(fetch(`${s.localUrl}/api/test-reload`), 5000, 'the response');
+    expect(await res.json()).toEqual({ reloaded: true });
+    // The switch to the new app happens after the reply.
+    await waitFor(() => s.setupComplete());
+    expect((await fetch(`${s.localUrl}/api/camera`)).status).toBe(200);
+    await within(s.stop(), 5000, 'stop()');
+  });
+
+  describe('with HTTPS on', () => {
+    let dataDir: string;
+    beforeAll(() => {
+      dataDir = tmp();
+    });
+
+    /** A set-up server on HTTPS with one keep-alive request done and a live WebSocket open. */
+    async function connected() {
+      const s = await startServer({
+        env: {
+          ...quiet,
+          ...fakeEnv,
+          HTTPS: 'true',
+          KASA_USERNAME: USER,
+          KASA_PASSWORD: PASS,
+          ALLOW_NO_PASSWORD: 'true',
+        },
+        settings: new SettingsStore(tmp()),
+        dataDir,
+        logger: silentLogger,
+      });
+      const base = `https://127.0.0.1:${s.port}`;
+      const agent = new https.Agent({ keepAlive: true, rejectUnauthorized: false });
+      const status = await new Promise<number | undefined>((resolve, reject) => {
+        https
+          .get(`${base}/api/health`, { agent }, (res) => {
+            res.resume();
+            res.on('end', () => resolve(res.statusCode));
+          })
+          .on('error', reject);
+      });
+      expect(status).toBe(200);
+      const ws = new WebSocket(`wss://127.0.0.1:${s.port}${LIVE_WS_PATH}`, {
+        origin: base,
+        rejectUnauthorized: false,
+      });
+      ws.on('error', () => undefined);
+      await new Promise((resolve, reject) => {
+        ws.once('open', resolve);
+        ws.once('unexpected-response', () => reject(new Error('live socket refused')));
+      });
+      const cleanup = () => {
+        agent.destroy();
+        ws.terminate();
+      };
+      return { s, cleanup };
+    }
+
+    it('reload() finishes with a keep-alive connection and a live WebSocket open', async () => {
+      const { s, cleanup } = await connected();
+      const port = s.port;
+      try {
+        await within(s.reload(), 5000, 'reload()');
+        expect(s.port).toBe(port);
+      } finally {
+        cleanup();
+        await s.stop();
+      }
+    });
+
+    it('stop() finishes with a keep-alive connection and a live WebSocket open', async () => {
+      const { s, cleanup } = await connected();
+      try {
+        await within(s.stop(), 5000, 'stop()');
+      } finally {
+        cleanup();
+      }
+    });
   });
 });

@@ -12,6 +12,9 @@ import type { FastifyInstance } from 'fastify';
 
 const TLS_HANDSHAKE = 0x16;
 
+/** How long open requests get to finish when the server closes. */
+export const CLOSE_GRACE_MS = 1000;
+
 export interface DualListener {
   close(): Promise<void>;
   address(): net.AddressInfo;
@@ -25,7 +28,32 @@ export async function listenHttpsWithRedirect(
   const https = app.server;
 
   let boundPort = opts.port;
+  const sockets = trackSockets();
+  // The HTTPS server never listens itself, so Node doesn't track its
+  // connections and closeIdleConnections() does nothing. Track them here.
+  const tlsSockets = new Set<net.Socket>();
+  const busy = new Set<net.Socket>();
+  https.on('secureConnection', (tls: net.Socket) => {
+    tlsSockets.add(tls);
+    tls.once('close', () => {
+      tlsSockets.delete(tls);
+      busy.delete(tls);
+    });
+  });
+  https.on(
+    'request',
+    (req: { socket: net.Socket }, res: { once(e: 'close', f: () => void): void }) => {
+      busy.add(req.socket);
+      res.once('close', () => busy.delete(req.socket));
+    },
+  );
+  // Upgraded sockets belong to the WebSocket server, which closes them.
+  https.on('upgrade', (req: { socket: net.Socket }) => busy.add(req.socket));
+  const closeIdle = () => {
+    for (const tls of tlsSockets) if (!busy.has(tls)) tls.destroy();
+  };
   const front = net.createServer({ pauseOnConnect: true }, (socket) => {
+    sockets.add(socket);
     if (!opts.allowClient(socket.remoteAddress)) {
       socket.destroy();
       return;
@@ -62,11 +90,71 @@ export async function listenHttpsWithRedirect(
 
   return {
     address: () => front.address() as net.AddressInfo,
-    close: async () => {
-      await new Promise<void>((resolve) => front.close(() => resolve()));
-      await app.close();
-    },
+    // front.close() waits for every socket it accepted, including the ones
+    // handed to the HTTPS server, so close those too rather than wait.
+    close: () =>
+      closeGracefully(
+        app,
+        sockets,
+        () => new Promise<void>((r) => front.close(() => r())),
+        closeIdle,
+      ),
   };
+}
+
+/** Plain HTTP, with the same close behaviour as the HTTPS listener. */
+export async function listenHttp(
+  app: FastifyInstance,
+  opts: { host: string; port: number },
+): Promise<DualListener> {
+  await app.listen({ host: opts.host, port: opts.port });
+  // No connection is handled before the listen callback, so none are missed.
+  const sockets = trackSockets();
+  app.server.on('connection', (socket: net.Socket) => sockets.add(socket));
+  return {
+    address: () => app.server.address() as net.AddressInfo,
+    close: () =>
+      closeGracefully(
+        app,
+        sockets,
+        async () => undefined,
+        () => app.server.closeIdleConnections(),
+      ),
+  };
+}
+
+function trackSockets(): Set<net.Socket> {
+  const sockets = new Set<net.Socket>();
+  const add = sockets.add.bind(sockets);
+  sockets.add = (socket) => {
+    socket.once('close', () => sockets.delete(socket));
+    return add(socket);
+  };
+  return sockets;
+}
+
+/**
+ * Stop accepting and close idle keep-alive connections at once. app.close()
+ * closes the WebSockets. Whatever is still open after CLOSE_GRACE_MS is destroyed.
+ */
+async function closeGracefully(
+  app: FastifyInstance,
+  sockets: Set<net.Socket>,
+  stopAccepting: () => Promise<void>,
+  closeIdle: () => void,
+): Promise<void> {
+  const stopped = stopAccepting();
+  const force = setTimeout(() => {
+    for (const socket of sockets) socket.destroy();
+  }, CLOSE_GRACE_MS);
+  try {
+    closeIdle();
+    await app.close();
+    closeIdle();
+    await stopped;
+  } finally {
+    clearTimeout(force);
+  }
 }
 
 /** Collect a plain-HTTP request head (up to 4 KiB). */

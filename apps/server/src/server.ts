@@ -7,7 +7,7 @@ import { Camera, locateCamera } from './kasa/camera.js';
 import { CameraWatcher } from './kasa/cameraWatcher.js';
 import type { DiscoveredDevice } from './kasa/discovery.js';
 import { syncTimeZone } from './kasa/timeZone.js';
-import { listenHttpsWithRedirect } from './listen.js';
+import { listenHttp, listenHttpsWithRedirect } from './listen.js';
 import { createLogger, type Logger } from './logger.js';
 import { LiveHub } from './media/liveHub.js';
 import { loadOrCreateSecret } from './security/dataDir.js';
@@ -147,9 +147,17 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     retry.unref();
   };
 
-  /** Build a new instance, then swap it in on the same port. */
-  const replace = async (located?: Located): Promise<void> => {
+  /**
+   * Build a new instance, then swap it in on the same port. onPrepared runs
+   * once the new settings are loaded and the new app is built. The swap
+   * waits a turn after it so a route handler can send its reply first.
+   */
+  const replace = async (located?: Located, onPrepared?: () => void): Promise<void> => {
     const next = await prepare(readConfig(), located);
+    if (onPrepared) {
+      onPrepared();
+      await new Promise((r) => setImmediate(r));
+    }
     if (current) await disposeInstance(current);
     current = undefined;
     current = await next.listen([boundPort]);
@@ -199,7 +207,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       ...(cameraError ? { cameraError } : {}),
       logger,
       ...(tls ? { tls } : {}),
-      reload: () => running.reload(),
+      reload: reloadFromRoute,
       ...(opts.hooks ? { hooks: opts.hooks } : {}),
       desktop: config.desktop,
       lanUrl,
@@ -260,6 +268,21 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       instance.timers.push(setInterval(() => void sync(), 60 * 60 * 1000).unref());
     }
   };
+
+  // For route handlers: resolves when the new app is ready, before the swap,
+  // because the swap closes the old app and waits for the handler's request.
+  function reloadFromRoute(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      serial(async () => {
+        if (stopped) throw new Error('The server is stopped');
+        clearTimeout(retry);
+        await replace(undefined, resolve);
+      }).catch((err: Error) => {
+        logger.error({ err: err.message }, 'Could not reload the settings');
+        reject(err);
+      });
+    });
+  }
 
   const first = await prepare(firstConfig);
   const start = firstConfig.port;
@@ -347,12 +370,8 @@ async function listenOnFirstFree(
         });
         return { port: listener.address().port, close: listener.close };
       }
-      await app.listen({ host: config.host, port });
-      const address = app.server.address();
-      return {
-        port: typeof address === 'object' && address ? address.port : port,
-        close: () => app.close(),
-      };
+      const listener = await listenHttp(app, { host: config.host, port });
+      return { port: listener.address().port, close: listener.close };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
       app.log.warn({ port }, 'Port in use; trying the next one');
