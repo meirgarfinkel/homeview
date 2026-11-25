@@ -120,6 +120,34 @@ describe('CameraSource against the fake camera', () => {
     source.stop();
   });
 
+  it('does not leak a stream when restarted before the old one times out', async () => {
+    // The last viewer leaves (stop), a new one arrives seconds later (start).
+    // The stopped stream's stall timer must not fail the new run, start a
+    // second connection, or lose track of the live one. A lost connection
+    // keeps one of the camera's few viewer slots until the app quits.
+    const source = new CameraSource({
+      host: '127.0.0.1',
+      port: ports.streamPort,
+      path: '/https/stream/mixed',
+      credentials: new CameraCredentials(USER, PASS),
+      logger: silentLogger,
+      stallTimeoutMs: 400,
+    });
+    let connects = 0;
+    source.on('connected', () => connects++);
+    source.start();
+    await waitFor(() => connects === 1);
+    source.stop();
+    source.start();
+    await waitFor(() => connects === 2);
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(connects).toBe(2);
+    expect(source.state).toBe('live');
+    expect(fake.activeStreams).toBe(1);
+    source.stop();
+    await waitFor(() => fake.activeStreams === 0);
+  });
+
   it('surfaces wrong credentials as an error state', async () => {
     const source = new CameraSource({
       host: '127.0.0.1',
