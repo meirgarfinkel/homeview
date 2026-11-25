@@ -41,9 +41,12 @@ win:
   icon: icon.png
 nsis:
   artifactName: Kasa-Home-Setup.exe
-  oneClick: false
+  # One-click, per-user install: no install-mode page, so no path to a UAC
+  # administrator prompt. Installs under the user's own profile.
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
 
 mac:
   target:
