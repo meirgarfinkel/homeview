@@ -75,7 +75,7 @@ export async function loadOrCreateCertificate(
   }
 
   const now = new Date();
-  const pems = await generate([{ name: 'commonName', value: `Kasa monitor (${os.hostname()})` }], {
+  const pems = await generate([{ name: 'commonName', value: `Kasa Home (${os.hostname()})` }], {
     keySize: 2048,
     algorithm: 'sha256',
     notBeforeDate: new Date(now.getTime() - 60_000),

@@ -106,7 +106,7 @@ export function cameraRequest(req: CameraRequest): Promise<CameraResponse> {
       }
       const headers: Record<string, string> = {
         Host: `${req.host}:${req.port}`,
-        'User-Agent': 'kasa-monitor/0.1',
+        'User-Agent': 'kasa-home/0.1',
         Accept: '*/*',
         Connection: 'close',
         ...req.headers,

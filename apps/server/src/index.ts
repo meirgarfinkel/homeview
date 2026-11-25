@@ -68,10 +68,7 @@ async function main(): Promise<void> {
   }
   const scheme = tls ? 'https' : 'http';
   const shown = config.host === '0.0.0.0' ? lanAddress() : config.host;
-  logger.info(
-    { camera: host, url: `${scheme}://${shown}:${config.port}` },
-    'Kasa monitor is running',
-  );
+  logger.info({ camera: host, url: `${scheme}://${shown}:${config.port}` }, 'Kasa Home is running');
 
   // Check credentials early so a typo shows up in the log right away.
   camera.info(0).then(

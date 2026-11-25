@@ -58,7 +58,7 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
   useWakeLock(isLive);
 
   useEffect(() => {
-    const name = camera?.alias ?? 'Nursery';
+    const name = camera?.alias ?? 'Kasa Home';
     document.title = soundActive ? `Sound — ${name}` : `${name} · Monitor`;
   }, [soundActive, camera?.alias]);
 
@@ -87,7 +87,7 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
       if (!blob) return;
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `nursery-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+      a.download = `kasa-home-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }, 'image/png');
@@ -126,7 +126,7 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
         <div className="brand">
           <span className="moon" aria-hidden="true" />
           <div>
-            <h1>{camera?.alias ?? 'Nursery monitor'}</h1>
+            <h1>{camera?.alias ?? 'Kasa Home'}</h1>
             <p className="sub">
               {camera
                 ? `${camera.model} · ${camera.host}`

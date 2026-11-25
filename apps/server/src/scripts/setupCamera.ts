@@ -175,7 +175,7 @@ function describeNetwork(n: WifiNetwork): string {
 async function main(): Promise<void> {
   say('Kasa camera setup, without the phone app\n');
   say('This puts a new or factory-reset camera on your Wi-Fi. During setup this');
-  say('computer briefly leaves your home Wi-Fi, so the monitor page goes offline.');
+  say('computer briefly leaves your home Wi-Fi, so the Kasa Home page goes offline.');
 
   const acct = account();
   say('\nStep 1: how should the camera be set up?');
@@ -284,7 +284,7 @@ async function main(): Promise<void> {
     say(`Camera login is now: ${finalLogin.candidate.label}.`);
 
     const envPath = process.env['ENV_FILE'] ?? path.join(findRepoRoot() ?? process.cwd(), '.env');
-    // The monitor finds the camera by itself and follows it if its address
+    // Kasa Home finds the camera by itself and follows it if its address
     // changes, so no address is saved. An old pinned KASA_HOST is cleared.
     const values: Record<string, string> = {};
     if (process.env['KASA_HOST']) values['KASA_HOST'] = '';
@@ -303,7 +303,7 @@ async function main(): Promise<void> {
         say('Saved.');
       }
     }
-    say('\nDone. Restart the monitor so it picks up the camera (it finds it automatically).');
+    say('\nDone. Restart Kasa Home so it picks up the camera (it finds it automatically).');
   } finally {
     if (onCameraNetwork) await returnHome(autoSwitch, homeProfile).catch(() => undefined);
   }

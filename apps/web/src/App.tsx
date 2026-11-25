@@ -16,7 +16,7 @@ export function App() {
   if (error) {
     return (
       <div className="login">
-        <p className="error-text">Cannot reach the monitor server: {error}</p>
+        <p className="error-text">Cannot reach the Kasa Home server: {error}</p>
       </div>
     );
   }

@@ -24,7 +24,7 @@ export function Login({ onSuccess }: { onSuccess(): void }) {
     <div className="login">
       <form className="panel login-card" onSubmit={submit}>
         <span className="moon big" aria-hidden="true" />
-        <h1>Nursery monitor</h1>
+        <h1>Kasa Home</h1>
         <label className="field">
           <span>Password</span>
           <input
