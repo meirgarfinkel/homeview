@@ -262,3 +262,64 @@ it('never overlaps polls and stops on unmount', async () => {
   await tick(5000);
   expect(fetchMock.mock.calls.length).toBe(calls);
 });
+
+it('picks up a job that is already running when start answers 409', async () => {
+  const user = setup();
+  startReply = json({ error: 'onboarding-running', message: 'Already running.' }, 409);
+  polls = [
+    status({ phase: 'choose-wifi', networks: [{ ssid: 'HomeNet', open: true, signal: -40 }] }),
+  ];
+  await renderLocal();
+  expect(screen.getByRole('heading', { name: 'Starting camera setup…' })).toBeTruthy();
+  await tick();
+  expect(screen.getByRole('heading', { name: 'Choose your home Wi-Fi' })).toBeTruthy();
+  user.click(screen.getByRole('button', { name: 'Connect the camera' }));
+  await flush();
+  expect(bodies('/api/setup/onboarding/answer', 'POST')).toEqual([
+    { type: 'wifi', ssid: 'HomeNet', passphrase: '', alias: 'nursery' },
+  ]);
+});
+
+it('still reaches done when a poll that began before an answer returns done', async () => {
+  const user = setup();
+  let releasePoll: (() => void) | undefined;
+  fetchMock.mockImplementation((path, init) => {
+    const method = init?.method ?? 'GET';
+    if (path === '/api/setup/onboarding' && method === 'POST') {
+      return Promise.resolve(json(status({}), 202));
+    }
+    if (path === '/api/setup/onboarding' && method === 'GET') {
+      return new Promise<Response>((resolve) => {
+        releasePoll = () => resolve(json(status({ phase: 'done' })));
+      });
+    }
+    return Promise.resolve(json(status({ phase: 'scanning' })));
+  });
+  const onDone = vi.fn();
+  render(<Onboarding mode="local" onDone={onDone} onCancel={vi.fn()} />);
+  await flush();
+  await tick();
+  user.click(screen.getByRole('button', { name: 'The camera is reset' }));
+  await flush();
+  await act(async () => releasePoll?.());
+  expect(onDone).not.toHaveBeenCalled();
+  await tick();
+  await act(async () => releasePoll?.());
+  await flush();
+  expect(onDone).toHaveBeenCalledTimes(1);
+});
+
+it('shows a plain message with a way back when the job is gone', async () => {
+  const user = setup();
+  polls = [status({ phase: 'scanning' })];
+  const { onCancel } = await renderLocal();
+  fetchMock.mockImplementation(() =>
+    Promise.resolve(json({ error: 'no-onboarding', message: '' }, 404)),
+  );
+  await tick();
+  const alert = screen.getByRole('alert');
+  expect(alert.textContent).toMatch(/has not started/);
+  user.click(screen.getByRole('button', { name: 'Cancel' }));
+  await flush();
+  expect(onCancel).toHaveBeenCalledTimes(1);
+});

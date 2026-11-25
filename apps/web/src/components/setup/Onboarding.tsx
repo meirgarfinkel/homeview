@@ -183,8 +183,10 @@ export function Onboarding({
         if (stopped) return;
         failures = 0;
         setUnreachable(false);
-        if (seen === version.current) setStatus(next);
-        if (next.phase === 'done') return;
+        if (seen === version.current) {
+          setStatus(next);
+          if (next.phase === 'done') return;
+        }
       } catch (err) {
         if (stopped) return;
         if (err instanceof ApiRequestError && err.status === 404) {
@@ -253,6 +255,7 @@ export function Onboarding({
   // Automatic Wi-Fi switching has nothing to ask, so it shares this screen.
   const waiting = (
     <Screen key="waiting" title="Waiting for the camera to join your Wi-Fi (up to 2 minutes)…">
+      {errorLine}
       {notice}
       {cancelButton}
     </Screen>
@@ -353,6 +356,7 @@ export function Onboarding({
     case 'join-camera-wifi':
       return status.autoWifi ? (
         <Screen key="join-auto" title="Connecting to the camera…">
+          {errorLine}
           {notice}
           {cancelButton}
         </Screen>
@@ -362,6 +366,7 @@ export function Onboarding({
             On this computer, open the Wi-Fi menu and join the network named like Kasa_Cam_1A2B. It
             has no password. This page carries on by itself once you have.
           </p>
+          {errorLine}
           {notice}
           {cancelButton}
         </Screen>
@@ -369,6 +374,7 @@ export function Onboarding({
     case 'scanning':
       return (
         <Screen key="scanning" title="Asking the camera which networks it can see…">
+          {errorLine}
           {notice}
           {cancelButton}
         </Screen>
@@ -394,6 +400,7 @@ export function Onboarding({
       ) : (
         <Screen key="return" title="Rejoin your home Wi-Fi">
           <p>Switch this computer back to your home Wi-Fi. This page carries on by itself.</p>
+          {errorLine}
           {notice}
           {cancelButton}
         </Screen>
