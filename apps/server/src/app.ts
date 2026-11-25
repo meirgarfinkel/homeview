@@ -10,13 +10,16 @@ import type { LiveHub } from './media/liveHub.js';
 import { loggerOptions, type Logger } from './logger.js';
 import { notSetUp, registerApiRoutes } from './routes/api.js';
 import { registerLiveRoute } from './routes/live.js';
+import { registerSetupRoutes } from './routes/setup.js';
 import {
   createHostAllowlist,
   createIpAllowlist,
+  isLoopback,
   isSameOrigin,
   localNetworkCidrs,
 } from './security/network.js';
 import { parseCookies, SESSION_COOKIE, SessionManager } from './security/session.js';
+import type { SettingsStore } from './settings/store.js';
 
 export interface CameraService {
   info(): Promise<CameraInfo>;
@@ -32,6 +35,8 @@ export interface ServerHooks {
 
 export interface AppDeps {
   config: Config;
+  /** Where the setup routes save. Without it there are no setup routes. */
+  settings?: SettingsStore;
   /** Missing before setup is complete, or while the camera can't be found. */
   camera?: CameraService;
   hub?: LiveHub;
@@ -62,6 +67,17 @@ export function clientAllowlist(config: Config): string[] {
 
 /** Routes reachable without a session. */
 const PUBLIC_API = new Set(['/api/health', '/api/session', '/api/login', '/api/logout']);
+
+/** What other computers may reach before setup is complete. */
+const BEFORE_SETUP_API = new Set(['/api/health', '/api/session']);
+
+/** Setup routes: this computer only, and no session needed. */
+const SETUP_API = /^\/api\/setup(\/|$)/;
+
+const localOnly = {
+  error: 'local-only',
+  message: 'Only the computer running Kasa Home can do this.',
+};
 
 /** Routes that talk to the camera or its stream. */
 const CAMERA_API = /^\/api\/(camera|status|live|ptz)(\/|$)/;
@@ -112,7 +128,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.code(403).send({ error: 'forbidden_origin', message: 'Cross-origin request' });
     }
     const url = req.url.split('?', 1)[0]!;
-    if (url.startsWith('/api/') && !PUBLIC_API.has(url)) {
+    // The socket's address, never a header: trustProxy is off.
+    if (url.startsWith('/api/') && !isLoopback(req.ip)) {
+      // Nobody else may use Kasa Home until this computer has chosen a password.
+      if (!config.setupComplete && !BEFORE_SETUP_API.has(url)) {
+        return reply.code(403).send(notSetUp);
+      }
+      if (SETUP_API.test(url)) return reply.code(403).send(localOnly);
+    }
+    if (url.startsWith('/api/') && !PUBLIC_API.has(url) && !SETUP_API.test(url)) {
       // Before setup there is no camera behind these routes, so saying so reveals nothing.
       if (!deps.camera && !config.setupComplete && CAMERA_API.test(url)) {
         return reply.code(503).send(notSetUp);
@@ -153,6 +177,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   await registerApiRoutes(app, { ...deps, sessions, openAccess, isAuthenticated });
+  if (deps.settings) {
+    await registerSetupRoutes(app, {
+      config,
+      settings: deps.settings,
+      ...(deps.reload ? { reload: deps.reload } : {}),
+    });
+  }
   if (deps.hub) await registerLiveRoute(app, deps.hub);
   await registerStatic(app, config.staticDir);
 

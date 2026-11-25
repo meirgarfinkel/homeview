@@ -405,23 +405,30 @@ describe('no viewer password and no ALLOW_NO_PASSWORD', () => {
     const camera = new Camera('127.0.0.1', config, silentLogger);
     const hub = new LiveHub({ source: camera.source, logger: silentLogger });
     const app = await buildApp({ config, camera, hub, logger: silentLogger });
-    const base = { remoteAddress: '10.0.0.5', headers: { host: '192.168.1.20:8080' } };
+    const lan = { remoteAddress: '10.0.0.5', headers: { host: '192.168.1.20:8080' } };
+    const local = { remoteAddress: '127.0.0.1', headers: { host: 'localhost:8080' } };
     fake.commands.length = 0;
-    expect((await app.inject({ url: '/api/camera', ...base })).statusCode).toBe(401);
-    const move = await app.inject({
-      method: 'POST',
-      url: '/api/ptz/move',
-      ...base,
-      payload: { direction: 'left' },
-    });
-    expect(move.statusCode).toBe(401);
-    const login = await app.inject({
-      method: 'POST',
-      url: '/api/login',
-      ...base,
-      payload: { password: 'anything' },
-    });
-    expect(login.statusCode).toBe(503);
+    // Other computers are refused outright until setup is complete.
+    for (const [base, refused, loginRefused] of [
+      [lan, 403, 403],
+      [local, 401, 503],
+    ] as const) {
+      expect((await app.inject({ url: '/api/camera', ...base })).statusCode).toBe(refused);
+      const move = await app.inject({
+        method: 'POST',
+        url: '/api/ptz/move',
+        ...base,
+        payload: { direction: 'left' },
+      });
+      expect(move.statusCode).toBe(refused);
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/login',
+        ...base,
+        payload: { password: 'anything' },
+      });
+      expect(login.statusCode).toBe(loginRefused);
+    }
     expect(fake.commands).toEqual([]);
     hub.close();
     await app.close();

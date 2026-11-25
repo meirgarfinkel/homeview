@@ -202,6 +202,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
 
     const app = await buildApp({
       config,
+      settings,
       ...(camera ? { camera } : {}),
       ...(hub ? { hub } : {}),
       ...(cameraError ? { cameraError } : {}),
@@ -252,6 +253,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         apiPort: config.camera.apiPort,
         pinnedSha256: config.camera.certSha256,
         allowPublicHost: config.camera.allowPublicHost,
+        ...(config.camera.discoveryPort ? { discoveryPort: config.camera.discoveryPort } : {}),
+        ...(config.camera.discoveryTargets
+          ? { discoveryTargets: config.camera.discoveryTargets }
+          : {}),
         logger: logger.child({ component: 'locate' }),
       });
       instance.watcher.start();

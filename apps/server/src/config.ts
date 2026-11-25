@@ -72,6 +72,12 @@ const schema = z.object({
   }),
   KASA_SYNC_TIMEZONE: bool(true),
   KASA_ALLOW_PUBLIC_HOST: bool(false),
+  // Test knobs: probe these addresses on this port instead of broadcasting to 9999.
+  KASA_DISCOVERY_TARGETS: csv,
+  KASA_DISCOVERY_PORT: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.coerce.number().int().min(1).max(65535).optional(),
+  ),
 
   // Behaviour
   IDLE_DISCONNECT_SECONDS: z.coerce.number().int().min(0).max(3600).default(30),
@@ -114,6 +120,10 @@ export interface Config {
     allowPublicHost: boolean;
     /** Time zone to keep the camera's clock in, or undefined to leave it alone. */
     timeZone: string | undefined;
+    /** Where discovery probes go instead of the broadcast addresses. For tests. */
+    discoveryTargets: string[] | undefined;
+    /** Discovery port instead of 9999. For tests. */
+    discoveryPort: number | undefined;
   };
   idleDisconnectMs: number;
   ptz: { enabled: boolean; stepSpeed: number };
@@ -201,6 +211,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
       certSha256: e.KASA_CERT_SHA256,
       allowPublicHost: e.KASA_ALLOW_PUBLIC_HOST,
       timeZone: e.KASA_SYNC_TIMEZONE ? (e.KASA_TIMEZONE ?? hostTimeZone()) : undefined,
+      discoveryTargets: e.KASA_DISCOVERY_TARGETS.length > 0 ? e.KASA_DISCOVERY_TARGETS : undefined,
+      discoveryPort: e.KASA_DISCOVERY_PORT,
     },
     idleDisconnectMs: e.IDLE_DISCONNECT_SECONDS * 1000,
     ptz: { enabled: e.PTZ_ENABLED, stepSpeed: e.PTZ_STEP_SPEED },

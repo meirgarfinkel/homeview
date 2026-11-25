@@ -100,3 +100,13 @@ export interface ApiError {
   error: string;
   message: string;
 }
+
+/** A camera found during setup. */
+export interface SetupCamera {
+  alias: string;
+  model: string;
+  host: string;
+}
+
+/** Reply to POST /api/setup/existing-camera when the login worked. */
+export type SetupExistingResult = { saved: SetupCamera } | { choose: SetupCamera[] };
