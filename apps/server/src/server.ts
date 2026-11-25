@@ -445,7 +445,5 @@ async function listenOnFirstFree(
   await app.close();
   const range =
     ports.length > 1 ? `Ports ${ports[0]} to ${ports.at(-1)} are` : `Port ${ports[0]} is`;
-  throw new PortsInUseError(
-    `${range} in use. Close the program using them, or set PORT to a free port.`,
-  );
+  throw new PortsInUseError(`${range} in use. Close the program using them.`);
 }

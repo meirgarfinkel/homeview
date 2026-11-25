@@ -1,12 +1,13 @@
-import { ConfigError, resolveDataDir } from './config.js';
+import { resolveDataDir } from './config.js';
 import { loadEnvFile } from './env.js';
-import { CameraLocateError } from './kasa/camera.js';
-import { PortsInUseError, startServer } from './server.js';
+import { startServer } from './server.js';
 import { SettingsStore } from './settings/store.js';
+import { notSetUpText, terminalErrorText } from './startupText.js';
 
 async function main(): Promise<void> {
   loadEnvFile();
   const server = await startServer({ settings: new SettingsStore(resolveDataDir(process.env)) });
+  if (!server.setupComplete()) console.log(`\n${notSetUpText(server.localUrl)}\n`);
 
   let closing = false;
   const shutdown = async () => {
@@ -22,14 +23,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  if (
-    err instanceof ConfigError ||
-    err instanceof CameraLocateError ||
-    err instanceof PortsInUseError
-  ) {
-    console.error(`\n${err.message}\n`);
-  } else {
-    console.error(err);
-  }
+  const text = terminalErrorText(err);
+  if (text) console.error(`\n${text}\n`);
+  else console.error(err);
   process.exit(1);
 });
