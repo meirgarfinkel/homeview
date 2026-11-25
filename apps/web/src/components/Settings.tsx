@@ -272,8 +272,12 @@ export function Settings({ onClose }: { onClose(): void }) {
             />
             {settings.local && (
               <Section title="Set up a new or reset camera">
-                <button className="btn" type="button" onClick={() => setOnboarding(true)}>
-                  Start
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={() => setOnboarding(true)}
+                >
+                  Set up a camera
                 </button>
               </Section>
             )}

@@ -102,6 +102,18 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.brand > div {
+  min-width: 0;
+}
+
+.brand h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .moon {
@@ -359,6 +371,10 @@ input[type='text'] {
   border-color: var(--accent);
   color: #1b1405;
   font-weight: 600;
+}
+
+.panel > .btn {
+  justify-content: center;
 }
 
 .link {

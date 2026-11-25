@@ -129,7 +129,7 @@ it('connects a camera with a new login', async () => {
 it('opens camera setup in account mode, and returns', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(screen.getByRole('button', { name: 'Start' }));
+  await user.click(screen.getByRole('button', { name: 'Set up a camera' }));
   await user.click(screen.getByRole('button', { name: 'onboarding account' }));
   expect(await screen.findByRole('heading', { name: 'Viewer password' })).toBeTruthy();
 });
@@ -137,7 +137,7 @@ it('opens camera setup in account mode, and returns', async () => {
 it('opens camera setup in local mode for a local-only camera', async () => {
   const user = userEvent.setup();
   await open({ camera: { username: 'a@b.c', localOnly: true } });
-  await user.click(screen.getByRole('button', { name: 'Start' }));
+  await user.click(screen.getByRole('button', { name: 'Set up a camera' }));
   expect(screen.getByRole('button', { name: 'onboarding local' })).toBeTruthy();
 });
 
