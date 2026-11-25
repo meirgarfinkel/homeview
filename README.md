@@ -29,8 +29,11 @@ Pick one file from the [latest release](https://github.com/meirgarfinkel/kasa-ho
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Windows                          | [Kasa-Home-Setup.exe](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/Kasa-Home-Setup.exe)             |
 | Mac (Apple Silicon or Intel)     | [Kasa-Home.dmg](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/Kasa-Home.dmg)                         |
-| Linux, any distribution          | [Kasa-Home-x86_64.AppImage](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/Kasa-Home-x86_64.AppImage) |
 | Linux, Ubuntu, Debian or similar | [kasa-home.deb](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/kasa-home.deb)                         |
+| Linux, other distributions       | [Kasa-Home-x86_64.AppImage](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/Kasa-Home-x86_64.AppImage) |
+
+On Ubuntu and Debian, pick the .deb. The AppImage needs a system part
+(libfuse2) that newer versions of Ubuntu don't include, so it may not open.
 
 The files are not signed with a paid developer certificate, so Windows and
 macOS warn you once. The steps below say what to click.
@@ -49,12 +52,12 @@ click "Open Anyway" next to Kasa Home. Enter your Mac password if asked.
 You need macOS 12 or newer. Kasa Home shows only in the menu bar, with no
 Dock icon.
 
+**Linux, .deb.** Double-click the file and choose "Install" in the software
+installer. Then open Kasa Home from your applications menu.
+
 **Linux, AppImage.** Right-click the file, choose "Properties", then
 "Permissions", and turn on "Allow executing file as program" (in some file
 managers the item is "Run as a program"). Then double-click the file.
-
-**Linux, .deb.** Double-click the file and choose "Install" in the software
-installer. Then open Kasa Home from your applications menu.
 
 ### 3. Open Kasa Home and follow the pages
 
@@ -91,8 +94,9 @@ Kasa Home opens your browser on a welcome page, on this computer only.
      2.4 GHz Wi-Fi. If your network is missing, your router may broadcast
      only 5 GHz, so check its settings.
    - On a Mac or Windows, "Rejoin your home Wi-Fi" asks you to switch this
-     computer back. The page then waits up to 2 minutes for the camera to
-     join your Wi-Fi.
+     computer back. The page waits up to 5 minutes for the camera to join
+     your Wi-Fi, and moves on by itself once it has. On Linux this happens
+     by itself, with a wait of up to 2 minutes.
 4. "All set" shows the live picture and a QR code.
 
 On Windows, a prompt may ask whether to allow Kasa Home on networks. Allow
@@ -109,8 +113,8 @@ it on private networks, or phones can't connect.
    "Advanced", then "Proceed" (or "visit this website"). Each browser asks
    only once.
 3. Type the password you chose.
-4. Press the speaker button to turn on sound. Browsers need one tap before
-   they play sound.
+4. Tap "Tap to listen" to turn on sound. Browsers need one tap before they
+   play sound.
 
 On the computer that runs Kasa Home, use `http://localhost:8090` instead.
 That address gives no certificate warning. If port 8090 is taken, Kasa Home
@@ -162,7 +166,7 @@ Kasa Home keeps its settings and logs in this folder:
 - **Windows or the Mac won't open the installer.** See step 2. Both warnings
   appear once and are expected for unsigned apps.
 - **No tray icon on Linux.** See step 5.
-- **No sound.** Press the speaker button on the page, because browsers block
+- **No sound.** Tap "Tap to listen" on the page, because browsers block
   sound until you tap something. Check the phone isn't on silent.
 - **The camera setup stops part way.** Click "Try again" if the page offers
   it, or reset the camera and start over. The Kasa phone app can also set up
@@ -205,7 +209,8 @@ For a new or reset camera, run `pnpm setup-camera` and answer the prompts.
 Choose `1` for an account or `2` for local only. It resets the camera,
 switches your computer to the camera's Wi-Fi (Linux does this by itself, on a
 Mac you join `Kasa_Cam_1A2B` yourself), asks for your home Wi-Fi name and
-password, and waits up to 2 minutes for the camera to appear. The camera
+password, and waits for the camera to appear (up to 2 minutes, or 5 when
+you switch networks by hand). The camera
 needs 2.4 GHz Wi-Fi, and this computer needs Wi-Fi for this step. For local
 only, answer `y` when it offers to save the camera's login into `.env`. It
 prints `Done.` when finished.
