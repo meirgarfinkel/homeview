@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Menu, Tray, nativeImage, type NativeImage } from 'electron';
 
 export interface TrayActions {
@@ -9,19 +11,17 @@ export interface TrayActions {
   quit(): void;
 }
 
-/** Until the real icons arrive: a filled blue dot. */
-function placeholderIcon(): NativeImage {
-  const size = 32;
-  const pixels = Buffer.alloc(size * size * 4);
-  const r = size / 2;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if ((x + 0.5 - r) ** 2 + (y + 0.5 - r) ** 2 > (r - 1) ** 2) continue;
-      // BGRA
-      pixels.set([0xd0, 0x7a, 0x2a, 0xff], (y * size + x) * 4);
-    }
+/** The images tsup copies to dist/tray, next to the bundled main.mjs. */
+function trayIcon(): NativeImage {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'tray');
+  if (process.platform === 'darwin') {
+    // Picks up trayTemplate@2x.png on its own. A template image is drawn in
+    // the menu bar's colour, so it works in light and dark mode.
+    const image = nativeImage.createFromPath(path.join(dir, 'trayTemplate.png'));
+    image.setTemplateImage(true);
+    return image;
   }
-  return nativeImage.createFromBitmap(pixels, { width: size, height: size });
+  return nativeImage.createFromPath(path.join(dir, 'tray.png'));
 }
 
 export interface TrayHandle {
@@ -30,7 +30,7 @@ export interface TrayHandle {
 }
 
 export function createTray(actions: TrayActions): TrayHandle {
-  const tray = new Tray(placeholderIcon());
+  const tray = new Tray(trayIcon());
   tray.setToolTip(`Kasa Home: ${actions.localUrl}`);
 
   const refresh = () =>
