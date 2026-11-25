@@ -131,7 +131,7 @@ URL or logged), posts it to `/api/remote/pair`, and gets two cookies: a
 The address then works at home and away, so a parent keeps one bookmark.
 The page suggests "Add to Home Screen".
 
-Devices are stored in `settings.json` as `{id, name, tokenHash, createdAt,
+Devices are stored in `remote.json` as `{id, name, tokenHash, createdAt,
 lastSeenAt}`, with the token hashed (SHA-256). The name comes from the
 browser ("iPhone", "Android phone", "Mac", ...). `lastSeenAt` updates at most
 once a minute. Removing a device takes effect on its next request and
@@ -222,11 +222,11 @@ These were my calls, made from the brief (security first, then ease).
    except `/api/remote/pair`. The web app learns it is on the remote address
    from the server's 401 answer `{error:"device-not-paired"}` and shows the
    message.
-5. **Devices live in their own file**, `remote-devices.json` in the data
-   folder, written the same safe way as `settings.json`. Saving it never
-   triggers a reload. `lastSeenAt` is kept in memory and written at most
-   every 10 minutes and on shutdown. `remoteEnabled` stays in
-   `settings.json`.
+5. **Remote access has its own file**, `remote.json` in the data folder,
+   holding `enabled` and the device list, written owner-only like the
+   other data files. Saving it never triggers a reload, and `settings.json`
+   is untouched. `lastSeenAt` is kept in memory and written at most every
+   10 minutes and on shutdown.
 6. **The host name comes from the `ready` event**, because Tailscale may
    rename `kasa-home` to `kasa-home-1`. The remote Host check uses that
    name. Requests before `ready` get 503.
