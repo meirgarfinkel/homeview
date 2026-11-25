@@ -253,7 +253,7 @@ describe('lanAddress', () => {
     expect(
       lanAddress({
         bridge100: [iface('192.168.64.1')],
-        utun3: [iface('10.0.0.2')],
+        utun3: [iface('198.51.100.2')],
         en0: [iface('10.0.1.7')],
       }),
     ).toBe('10.0.1.7');
