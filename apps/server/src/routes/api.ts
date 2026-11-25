@@ -7,8 +7,11 @@ import {
   type PtzMoveMode,
   type SessionResponse,
   type StatusResponse,
+  LIVE_WS_PATH,
 } from '@kasa/shared';
-import type { AppDeps } from '../app.js';
+import type { AppDeps, CameraService } from '../app.js';
+import type { LiveHub } from '../media/liveHub.js';
+import { isLoopback } from '../security/network.js';
 import { CameraAuthError, LinkieError } from '../kasa/linkieClient.js';
 import { CameraHttpError } from '../kasa/httpClient.js';
 import { PtzUnsupportedError } from '../kasa/ptz.js';
@@ -21,8 +24,15 @@ import {
 
 interface ApiDeps extends AppDeps {
   sessions: SessionManager | undefined;
+  /** ALLOW_NO_PASSWORD with no viewer password: everyone counts as signed in. */
+  openAccess: boolean;
   isAuthenticated(req: FastifyRequest): boolean;
 }
+
+export const notSetUp: ApiError = {
+  error: 'not-set-up',
+  message: "Kasa Home isn't set up yet. Finish setup on the computer running it.",
+};
 
 function sendError(reply: FastifyReply, err: unknown): FastifyReply {
   const body = (error: string, message: string): ApiError => ({ error, message });
@@ -51,8 +61,11 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
   app.get('/api/health', async () => ({ ok: true }));
 
   app.get('/api/session', async (req): Promise<SessionResponse> => ({
-    authRequired: Boolean(sessions),
+    authRequired: !deps.openAccess,
     authenticated: deps.isAuthenticated(req),
+    setupComplete: deps.config.setupComplete,
+    local: isLoopback(req.ip),
+    desktop: deps.desktop ?? deps.config.desktop,
   }));
 
   app.post<{ Body: { password: string } }>(
@@ -68,7 +81,8 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
       },
     },
     async (req, reply) => {
-      if (!sessions) return reply.code(204).send();
+      if (!sessions)
+        return deps.openAccess ? reply.code(204).send() : reply.code(503).send(notSetUp);
       if (!limiter.hit(req.ip)) {
         return reply
           .code(429)
@@ -91,6 +105,24 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
     reply.header('Set-Cookie', clearedSessionCookie(secure)).code(204).send(),
   );
 
+  if (camera && hub) {
+    registerCameraRoutes(app, camera, hub);
+    return;
+  }
+  // No camera yet: every camera route answers 503 with the reason.
+  const unavailable: ApiError = deps.config.setupComplete
+    ? { error: 'camera-offline', message: deps.cameraError ?? 'The camera is offline' }
+    : notSetUp;
+  for (const url of ['/api/status', '/api/camera', '/api/ptz/*', LIVE_WS_PATH]) {
+    app.route({
+      method: ['GET', 'POST'],
+      url,
+      handler: (_req, reply) => reply.code(503).send(unavailable),
+    });
+  }
+}
+
+function registerCameraRoutes(app: FastifyInstance, camera: CameraService, hub: LiveHub): void {
   app.get('/api/status', async (): Promise<StatusResponse> => ({
     stream: hub.stats(),
     ptz: camera.ptz.capability,

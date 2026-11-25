@@ -3,6 +3,7 @@ import {
   createHostAllowlist,
   createIpAllowlist,
   hostnameOf,
+  isLoopback,
   isPrivateAddress,
   isSameOrigin,
   normalizeIp,
@@ -47,6 +48,11 @@ describe('IP allowlist', () => {
   it('normalizes mapped and zoned addresses', () => {
     expect(normalizeIp('::ffff:192.168.0.1')).toBe('192.168.0.1');
     expect(normalizeIp('fe80::1%eth0')).toBe('fe80::1');
+  });
+
+  it('recognises loopback clients', () => {
+    expect(['127.0.0.1', '::1', '::ffff:127.0.0.1'].every(isLoopback)).toBe(true);
+    expect(['192.168.1.20', '::ffff:10.0.0.1', undefined].some(isLoopback)).toBe(false);
   });
 });
 

@@ -88,6 +88,12 @@ export interface StatusResponse {
 export interface SessionResponse {
   authRequired: boolean;
   authenticated: boolean;
+  /** False until a viewer password and a camera login are both saved. */
+  setupComplete: boolean;
+  /** True when the request comes from this computer. */
+  local: boolean;
+  /** True when the server runs inside the desktop app. */
+  desktop: boolean;
 }
 
 export interface ApiError {

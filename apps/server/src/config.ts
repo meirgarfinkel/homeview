@@ -34,7 +34,8 @@ const port = (fallback: number) => z.coerce.number().int().min(1).max(65535).def
 const schema = z.object({
   // Web server
   HOST: z.string().default('0.0.0.0'),
-  PORT: port(8080),
+  // 0 picks any free port (tests use it).
+  PORT: z.coerce.number().int().min(0).max(65535).default(8090),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   ALLOWED_CIDRS: csv,
   ALLOWED_HOSTS: csv,
@@ -90,6 +91,8 @@ export interface Config {
   allowedHosts: string[];
   /** How viewers prove they know the password, or undefined when there is none. */
   viewer: { kind: 'plain'; password: string } | { kind: 'hash'; hash: string } | undefined;
+  /** ALLOW_NO_PASSWORD: anyone on the allowed networks may watch without signing in. */
+  allowNoPassword: boolean;
   /** True when a viewer password (or ALLOW_NO_PASSWORD) and a camera login both exist. */
   setupComplete: boolean;
   /** True when running inside the desktop app. */
@@ -132,6 +135,12 @@ const repoRoot = findRepoRoot() ?? process.cwd();
 const defaultStaticDir = path.join(repoRoot, 'apps', 'web', 'dist');
 const defaultDataDir = path.join(repoRoot, 'data');
 
+/** DATA_DIR if set, else the repo's data folder. */
+export function resolveDataDir(env: NodeJS.ProcessEnv): string {
+  const dir = env['DATA_DIR']?.trim();
+  return dir ? path.resolve(dir) : defaultDataDir;
+}
+
 export function viewerCheck(config: Config): PasswordCheck | undefined {
   if (!config.viewer) return undefined;
   return config.viewer.kind === 'hash'
@@ -162,8 +171,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
     : settings?.viewerPasswordHash
       ? { kind: 'hash', hash: settings.viewerPasswordHash }
       : undefined;
-  const username = e.KASA_USERNAME ?? settings?.camera?.username;
-  const password = e.KASA_PASSWORD ?? settings?.camera?.password;
+  // The camera login comes as a pair: from the environment if it sets either half, else from settings.
+  const loginFromEnv = e.KASA_USERNAME !== undefined || e.KASA_PASSWORD !== undefined;
+  const username = loginFromEnv ? e.KASA_USERNAME : settings?.camera?.username;
+  const password = loginFromEnv ? e.KASA_PASSWORD : settings?.camera?.password;
   return {
     host: e.HOST,
     port: e.PORT,
@@ -171,11 +182,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
     allowedCidrs: e.ALLOWED_CIDRS.length > 0 ? e.ALLOWED_CIDRS : undefined,
     allowedHosts: e.ALLOWED_HOSTS,
     viewer,
+    allowNoPassword: e.ALLOW_NO_PASSWORD,
     setupComplete: Boolean(viewer || e.ALLOW_NO_PASSWORD) && Boolean(username && password),
     desktop: false,
     sessionSecret: e.SESSION_SECRET,
     staticDir: e.STATIC_DIR ? path.resolve(e.STATIC_DIR) : defaultStaticDir,
-    dataDir: e.DATA_DIR ? path.resolve(e.DATA_DIR) : defaultDataDir,
+    dataDir: resolveDataDir(env),
     https: { enabled: e.HTTPS, certFile: e.TLS_CERT_FILE, keyFile: e.TLS_KEY_FILE },
     camera: {
       host: e.KASA_HOST,

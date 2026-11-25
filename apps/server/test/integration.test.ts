@@ -339,7 +339,13 @@ describe('viewer password', () => {
   it('requires a session for the API', async () => {
     expect((await app.inject({ url: '/api/camera', ...base })).statusCode).toBe(401);
     const session = await app.inject({ url: '/api/session', ...base });
-    expect(session.json()).toEqual({ authRequired: true, authenticated: false });
+    expect(session.json()).toEqual({
+      authRequired: true,
+      authenticated: false,
+      setupComplete: true,
+      local: false,
+      desktop: false,
+    });
   });
 
   it('logs in with the right password and sets an HttpOnly cookie', async () => {
@@ -382,5 +388,42 @@ describe('viewer password', () => {
     for (let i = 0; i < 12; i++) codes.push((await attempt()).statusCode);
     expect(codes.slice(0, 10).every((c) => c === 401)).toBe(true);
     expect(codes.slice(10)).toEqual([429, 429]);
+  });
+});
+
+describe('no viewer password and no ALLOW_NO_PASSWORD', () => {
+  it('fails closed even when handed a camera', async () => {
+    const env: Record<string, string> = {
+      KASA_HOST: '127.0.0.1',
+      KASA_USERNAME: USER,
+      KASA_PASSWORD: PASS,
+      KASA_API_PORT: String(ports.apiPort),
+      KASA_STREAM_PORT: String(ports.streamPort),
+      ALLOWED_CIDRS: '127.0.0.0/8,10.0.0.0/8',
+    };
+    const config = loadConfig(env, {});
+    const camera = new Camera('127.0.0.1', config, silentLogger);
+    const hub = new LiveHub({ source: camera.source, logger: silentLogger });
+    const app = await buildApp({ config, camera, hub, logger: silentLogger });
+    const base = { remoteAddress: '10.0.0.5', headers: { host: '192.168.1.20:8080' } };
+    fake.commands.length = 0;
+    expect((await app.inject({ url: '/api/camera', ...base })).statusCode).toBe(401);
+    const move = await app.inject({
+      method: 'POST',
+      url: '/api/ptz/move',
+      ...base,
+      payload: { direction: 'left' },
+    });
+    expect(move.statusCode).toBe(401);
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/login',
+      ...base,
+      payload: { password: 'anything' },
+    });
+    expect(login.statusCode).toBe(503);
+    expect(fake.commands).toEqual([]);
+    hub.close();
+    await app.close();
   });
 });

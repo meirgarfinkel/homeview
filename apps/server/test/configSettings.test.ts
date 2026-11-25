@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig, viewerCheck } from '../src/config.js';
+import path from 'node:path';
+import { loadConfig, resolveDataDir, viewerCheck } from '../src/config.js';
 
 describe('config with settings', () => {
   it('is not set up with empty settings and no env', () => {
@@ -51,5 +52,33 @@ describe('config with settings', () => {
     expect(await plain?.verify('long enough')).toBe(true);
     expect(await plain?.verify('nope nope')).toBe(false);
     expect(viewerCheck(loadConfig({ ALLOW_NO_PASSWORD: 'true' }))).toBeUndefined();
+  });
+
+  it('takes the camera login as a pair from env or from settings, never mixed', () => {
+    const saved = { camera: { username: 'u@x', password: 'p', localOnly: false } };
+    const onlyUser = loadConfig({ KASA_USERNAME: 'env@x' }, saved);
+    expect(onlyUser.camera.username).toBe('env@x');
+    expect(onlyUser.camera.password).toBeUndefined();
+    expect(onlyUser.setupComplete).toBe(false);
+    const onlyPass = loadConfig({ KASA_PASSWORD: 'envpw', ALLOW_NO_PASSWORD: 'true' }, saved);
+    expect(onlyPass.camera.username).toBeUndefined();
+    expect(onlyPass.setupComplete).toBe(false);
+    const fromSettings = loadConfig({ KASA_USERNAME: '' }, saved);
+    expect(fromSettings.camera).toMatchObject({ username: 'u@x', password: 'p' });
+  });
+
+  it('records ALLOW_NO_PASSWORD so the app can tell open access from not set up', () => {
+    expect(loadConfig({ ALLOW_NO_PASSWORD: 'true' }).allowNoPassword).toBe(true);
+    expect(loadConfig({}, {}).allowNoPassword).toBe(false);
+  });
+
+  it('uses port 8090 by default', () => {
+    expect(loadConfig({}, {}).port).toBe(8090);
+  });
+
+  it('resolves the data dir from DATA_DIR or the repo data folder', () => {
+    expect(resolveDataDir({ DATA_DIR: 'some/where' })).toBe(path.resolve('some/where'));
+    expect(resolveDataDir({})).toBe(loadConfig({}, {}).dataDir);
+    expect(path.basename(resolveDataDir({}))).toBe('data');
   });
 });

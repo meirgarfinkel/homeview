@@ -8,7 +8,7 @@ import { viewerCheck, type Config } from './config.js';
 import type { PtzController } from './kasa/ptz.js';
 import type { LiveHub } from './media/liveHub.js';
 import { loggerOptions, type Logger } from './logger.js';
-import { registerApiRoutes } from './routes/api.js';
+import { notSetUp, registerApiRoutes } from './routes/api.js';
 import { registerLiveRoute } from './routes/live.js';
 import {
   createHostAllowlist,
@@ -23,14 +23,31 @@ export interface CameraService {
   readonly ptz: PtzController;
 }
 
+/** Things only the desktop app can do, offered to the setup and settings pages. */
+export interface ServerHooks {
+  getAutostart?(): boolean;
+  setAutostart?(on: boolean): void;
+  quit?(): void;
+}
+
 export interface AppDeps {
   config: Config;
-  camera: CameraService;
-  hub: LiveHub;
+  /** Missing before setup is complete, or while the camera can't be found. */
+  camera?: CameraService;
+  hub?: LiveHub;
+  /** Why the camera is missing when setup is complete. */
+  cameraError?: string;
   /** Use an existing logger (tests pass a silent one). */
   logger?: Logger;
   /** Serve HTTPS with this key pair. */
   tls?: { key: string; cert: string };
+  /** Re-read settings and rebuild the app on the same port. */
+  reload?: () => Promise<void>;
+  hooks?: ServerHooks;
+  /** True inside the desktop app. Defaults to config.desktop. */
+  desktop?: boolean;
+  /** The address other devices on the network use, if there is one. */
+  lanUrl?: () => string | undefined;
 }
 
 /** Client networks allowed by default: this machine and its real LAN. */
@@ -38,8 +55,11 @@ export function clientAllowlist(config: Config): string[] {
   return config.allowedCidrs ?? localNetworkCidrs();
 }
 
-/** Routes reachable without a session when VIEWER_PASSWORD is set. */
+/** Routes reachable without a session. */
 const PUBLIC_API = new Set(['/api/health', '/api/session', '/api/login', '/api/logout']);
+
+/** Routes that talk to the camera or its stream. */
+const CAMERA_API = /^\/api\/(camera|status|live|ptz)(\/|$)/;
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { config } = deps;
@@ -57,8 +77,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const check = viewerCheck(config);
   const sessions = check ? new SessionManager(check, config.sessionSecret) : undefined;
 
+  // Fail closed: without a viewer password only ALLOW_NO_PASSWORD opens the page.
+  const openAccess = !sessions && config.allowNoPassword;
   const isAuthenticated = (req: FastifyRequest) =>
-    !sessions || sessions.verify(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
+    sessions ? sessions.verify(parseCookies(req.headers.cookie)[SESSION_COOKIE]) : openAccess;
+
+  // Register first: its onRequest hook marks upgrade requests, so a refused
+  // upgrade gets its socket closed after the error response.
+  await app.register(fastifyWebsocket, {
+    options: { maxPayload: 4 * 1024 },
+  });
 
   app.addHook('onRequest', async (req, reply) => {
     if (!allowIp(req.ip)) {
@@ -79,8 +107,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return reply.code(403).send({ error: 'forbidden_origin', message: 'Cross-origin request' });
     }
     const url = req.url.split('?', 1)[0]!;
-    if (url.startsWith('/api/') && !PUBLIC_API.has(url) && !isAuthenticated(req)) {
-      return reply.code(401).send({ error: 'unauthorized', message: 'Sign in required' });
+    if (url.startsWith('/api/') && !PUBLIC_API.has(url)) {
+      // Before setup there is no camera behind these routes, so saying so reveals nothing.
+      if (!deps.camera && !config.setupComplete && CAMERA_API.test(url)) {
+        return reply.code(503).send(notSetUp);
+      }
+      if (!isAuthenticated(req)) {
+        return reply.code(401).send({ error: 'unauthorized', message: 'Sign in required' });
+      }
     }
     return undefined;
   });
@@ -113,12 +147,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return payload;
   });
 
-  await app.register(fastifyWebsocket, {
-    options: { maxPayload: 4 * 1024 },
-  });
-
-  await registerApiRoutes(app, { ...deps, sessions, isAuthenticated });
-  await registerLiveRoute(app, deps.hub);
+  await registerApiRoutes(app, { ...deps, sessions, openAccess, isAuthenticated });
+  if (deps.hub) await registerLiveRoute(app, deps.hub);
   await registerStatic(app, config.staticDir);
 
   return app;

@@ -41,6 +41,12 @@ export function normalizeIp(ip: string | undefined): string {
   return mapped ? mapped[1]! : unzoned;
 }
 
+/** True for a connection from this computer (127.0.0.0/8 or ::1). */
+export function isLoopback(ip: string | undefined): boolean {
+  const addr = normalizeIp(ip);
+  return addr === '::1' || (net.isIPv4(addr) && addr.startsWith('127.'));
+}
+
 export function createIpAllowlist(
   cidrs: readonly string[] = PRIVATE_CIDRS,
 ): (ip: string | undefined) => boolean {
