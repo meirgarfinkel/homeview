@@ -188,3 +188,40 @@ describe('HTTPS listener with HTTP redirect', () => {
     expect(res).toContain(`Location: https://192.168.1.20:${remotePort}/\r\n`);
   });
 });
+
+describe('swapping the app behind the HTTPS listener', () => {
+  const hello = (port: number) =>
+    new Promise<string>((resolve, reject) => {
+      https
+        .get({ host: '127.0.0.1', port, path: '/hello', rejectUnauthorized: false }, (res) => {
+          let b = '';
+          res.on('data', (d) => (b += d));
+          res.on('end', () => resolve(b));
+        })
+        .on('error', reject);
+    });
+
+  it("uses the new app's allowed networks for new connections", async () => {
+    const tls = await loadOrCreateCertificate(dir);
+    const build = (answer: string) => {
+      const app = Fastify({ https: { key: tls.key, cert: tls.cert } });
+      app.get('/hello', async () => answer);
+      return app;
+    };
+    // Built while this client's network was not one of the computer's.
+    const listener = await listenHttpsWithRedirect(build('old'), {
+      host: '127.0.0.1',
+      port: 0,
+      tls,
+      allowClient: () => false,
+    });
+    const { port } = listener.address();
+    try {
+      await expect(hello(port)).rejects.toThrow();
+      await listener.swap(build('new'), { allowClient: (ip) => ip === '127.0.0.1' });
+      expect(await hello(port)).toBe('new');
+    } finally {
+      await listener.close();
+    }
+  });
+});

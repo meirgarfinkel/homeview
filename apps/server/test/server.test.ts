@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import net, { type AddressInfo } from 'node:net';
-import type os from 'node:os';
+import os from 'node:os';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -458,6 +458,57 @@ describe('rebuilding while clients are connected', () => {
         );
       } finally {
         cleanup();
+        await s.stop();
+      }
+    });
+
+    // The computer may join another network during camera setup, so the
+    // rebuild after it works out the allowed networks again.
+    it.skipIf(!lanAddress())('lets in a new network after a reload', async () => {
+      const lan = lanAddress()!;
+      const real = os.networkInterfaces();
+      const loopbackOnly = { lo: real.lo ?? [] };
+      const spy = vi.spyOn(os, 'networkInterfaces').mockReturnValue(loopbackOnly);
+      const s = await startServer({
+        env: {
+          ...quiet,
+          ...fakeEnv,
+          HOST: '0.0.0.0',
+          HTTPS: 'true',
+          KASA_USERNAME: USER,
+          KASA_PASSWORD: PASS,
+          ALLOW_NO_PASSWORD: 'true',
+        },
+        settings: new SettingsStore(tmp()),
+        dataDir,
+        logger: silentLogger,
+      });
+      const health = () =>
+        new Promise<number | undefined>((resolve, reject) => {
+          https
+            .get(
+              {
+                host: lan,
+                port: s.port,
+                path: '/api/health',
+                agent: false,
+                rejectUnauthorized: false,
+              },
+              (res) => {
+                res.resume();
+                res.on('end', () => resolve(res.statusCode));
+              },
+            )
+            .on('error', reject);
+        });
+      try {
+        // Only loopback counts as local, so this computer's LAN address is turned away.
+        await expect(health()).rejects.toThrow();
+        spy.mockReturnValue(real);
+        await within(s.reload(), 5000, 'reload()');
+        expect(await health()).toBe(200);
+      } finally {
+        spy.mockRestore();
         await s.stop();
       }
     });

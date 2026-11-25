@@ -265,8 +265,12 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       },
       /** A reload: take over the listener's requests from the current app. */
       swapInto: async (into: DualListener): Promise<void> => {
-        await into.swap(app, () => {
-          current = next = instance(boundPort);
+        await into.swap(app, {
+          // The computer may have joined another network since the last build.
+          ...(tls ? { allowClient: createIpAllowlist(allowed) } : {}),
+          onSwitched: () => {
+            current = next = instance(boundPort);
+          },
         });
       },
       /** After the old instance is gone: log and start the camera tasks. */

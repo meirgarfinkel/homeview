@@ -33,10 +33,17 @@ export interface DualListener {
   /**
    * Send requests to this app from now on, then close the previous app once
    * its open requests finish (or after CLOSE_GRACE_MS). The port and its
-   * connections stay open. onSwitched runs at the moment requests start
-   * going to the new app.
+   * connections stay open. allowClient, if given, replaces the check on
+   * new connections from then on. onSwitched runs at the moment requests
+   * start going to the new app.
    */
-  swap(app: FastifyInstance, onSwitched?: () => void): Promise<void>;
+  swap(app: FastifyInstance, opts?: SwapOptions): Promise<void>;
+}
+
+export interface SwapOptions {
+  /** Which clients may connect, worked out again for the new app. */
+  allowClient?: (ip: string | undefined) => boolean;
+  onSwitched?: () => void;
 }
 
 interface FrontOptions {
@@ -74,7 +81,7 @@ export async function listenHttp(
 async function listenFront(app: FastifyInstance, opts: FrontOptions): Promise<DualListener> {
   await app.ready();
   let current = app;
-  const allowClient = opts.allowClient ?? (() => true);
+  let allowClient = opts.allowClient ?? (() => true);
   const isLocalClient = opts.isLocalClient ?? isLoopback;
   let boundPort = opts.port;
 
@@ -200,12 +207,13 @@ async function listenFront(app: FastifyInstance, opts: FrontOptions): Promise<Du
 
   return {
     address: () => front.address() as net.AddressInfo,
-    swap: async (next, onSwitched) => {
+    swap: async (next, { allowClient: nextAllowClient, onSwitched } = {}) => {
       if (closing) throw new Error('The listener is closed');
       // Get the new app fully ready first, so the switch itself is instant.
       await next.ready();
       const previous = current;
       current = next;
+      if (nextAllowClient) allowClient = nextAllowClient;
       onSwitched?.();
       await settled(previous);
       // Closes the old app's WebSockets. Its connections stay with the listener.
