@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"tailscale.com/ipn"
 	"tailscale.com/tsnet"
 )
 
@@ -95,12 +93,10 @@ func run(stateDir, target, hostname, secret string) error {
 	emit(event{Type: "ready", URL: "https://" + dnsName})
 
 	httpSrv := &http.Server{
-		Handler: newProxy(targetURL, secret),
+		Handler: newFunnelProxy(targetURL, secret),
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-			if tc, ok := c.(*tls.Conn); ok {
-				if fc, ok := tc.NetConn().(*ipn.FunnelConn); ok {
-					return withClientAddr(ctx, fc.Src.Addr().String())
-				}
+			if ip, ok := clientAddrFromConn(c); ok {
+				return withClientAddr(ctx, ip)
 			}
 			return ctx
 		},

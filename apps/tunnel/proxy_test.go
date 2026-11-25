@@ -2,12 +2,16 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"testing"
+
+	"tailscale.com/ipn"
 )
 
 func mustURL(t *testing.T, raw string) *url.URL {
@@ -38,23 +42,6 @@ func TestProxySetsSecretAndReplacesForwardedFor(t *testing.T) {
 	}
 	if gotFwd != "203.0.113.9" {
 		t.Errorf("X-Forwarded-For = %q, want 203.0.113.9", gotFwd)
-	}
-}
-
-func TestProxyUsesClientAddrFromContext(t *testing.T) {
-	var gotFwd string
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotFwd = r.Header.Get("X-Forwarded-For")
-	}))
-	defer backend.Close()
-
-	req := httptest.NewRequest("GET", "http://kasa.example/", nil)
-	req.RemoteAddr = "100.64.0.1:443"
-	req = req.WithContext(withClientAddr(req.Context(), "198.51.100.7"))
-	newProxy(mustURL(t, backend.URL), "s").ServeHTTP(httptest.NewRecorder(), req)
-
-	if gotFwd != "198.51.100.7" {
-		t.Errorf("X-Forwarded-For = %q, want 198.51.100.7", gotFwd)
 	}
 }
 
@@ -108,5 +95,62 @@ func TestProxyPassesWebSocketUpgrade(t *testing.T) {
 	line, err := br.ReadString('\n')
 	if err != nil || line != "ping\n" {
 		t.Fatalf("echo = %q, err = %v", line, err)
+	}
+}
+
+func TestFunnelProxyRefusesWithoutClientAddr(t *testing.T) {
+	called := false
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
+	defer backend.Close()
+
+	req := httptest.NewRequest("GET", "http://kasa.example/", nil)
+	req.RemoteAddr = "100.64.0.1:443"
+	rec := httptest.NewRecorder()
+	newFunnelProxy(mustURL(t, backend.URL), "s").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", rec.Code)
+	}
+	if called {
+		t.Error("backend was reached without a client address")
+	}
+}
+
+func TestFunnelProxyForwardsClientAddrFromContext(t *testing.T) {
+	var gotFwd string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFwd = r.Header.Get("X-Forwarded-For")
+	}))
+	defer backend.Close()
+
+	req := httptest.NewRequest("GET", "http://kasa.example/", nil)
+	req.RemoteAddr = "100.64.0.1:443"
+	req = req.WithContext(withClientAddr(req.Context(), "198.51.100.7"))
+	newFunnelProxy(mustURL(t, backend.URL), "s").ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotFwd != "198.51.100.7" {
+		t.Errorf("X-Forwarded-For = %q, want 198.51.100.7", gotFwd)
+	}
+}
+
+func TestClientAddrFromConn(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+
+	if _, ok := clientAddrFromConn(a); ok {
+		t.Error("plain conn reported a client address")
+	}
+	if _, ok := clientAddrFromConn(tls.Client(a, &tls.Config{})); ok {
+		t.Error("tls conn over a non-funnel conn reported a client address")
+	}
+	if _, ok := clientAddrFromConn(tls.Client(&ipn.FunnelConn{Conn: a}, &tls.Config{})); ok {
+		t.Error("funnel conn with no source reported a client address")
+	}
+
+	fc := &ipn.FunnelConn{Conn: a, Src: netip.MustParseAddrPort("[::ffff:203.0.113.9]:4444")}
+	ip, ok := clientAddrFromConn(tls.Client(fc, &tls.Config{}))
+	if !ok || ip != "203.0.113.9" {
+		t.Errorf("got %q, %v; want 203.0.113.9, true", ip, ok)
 	}
 }
