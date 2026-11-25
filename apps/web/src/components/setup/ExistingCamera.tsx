@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import type { SetupCamera } from '@kasa/shared';
-import { api } from '../../lib/api';
+import { api, ApiRequestError } from '../../lib/api';
 import { errorText } from '../../lib/errors';
 import { useHeadingFocus } from './useHeadingFocus';
+
+const RESTART_RETRY_MS = 500;
 
 export function ExistingCamera({ onDone, onBack }: { onDone(): void; onBack(): void }) {
   const heading = useHeadingFocus();
@@ -16,7 +18,15 @@ export function ExistingCamera({ onDone, onBack }: { onDone(): void; onBack(): v
     setBusy(true);
     setError(undefined);
     try {
-      const result = await api.setup.existingCamera(username, password, alias);
+      let result;
+      try {
+        result = await api.setup.existingCamera(username, password, alias);
+      } catch (err) {
+        // The server reloads after the password step, so the first try can miss it.
+        if (err instanceof ApiRequestError) throw err;
+        await new Promise((resolve) => setTimeout(resolve, RESTART_RETRY_MS));
+        result = await api.setup.existingCamera(username, password, alias);
+      }
       if ('saved' in result) onDone();
       else setChoices(result.choose);
     } catch (err) {

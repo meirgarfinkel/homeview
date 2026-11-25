@@ -6,22 +6,26 @@ import { Monitor } from './components/Monitor';
 import { SetupWizard } from './components/setup/SetupWizard';
 import { NotSetUp } from './components/setup/NotSetUp';
 
-const RETRY_MS = 500;
-const RETRIES = 20;
+const RETRIES = 40;
 
-/** The server restarts its listeners after setup, so the next read may fail once or twice. */
-async function sessionWithRetry(): Promise<SessionResponse> {
+/**
+ * The server reloads after setup, so reads may fail, or answer from the old settings, for a
+ * moment. Keep asking until it says setup is complete.
+ */
+async function sessionAfterSetup(retryMs: number): Promise<SessionResponse> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await api.session();
-    } catch (err) {
-      if (attempt >= RETRIES) throw err;
-      await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
+      const session = await api.session();
+      if (session.setupComplete) return session;
+    } catch {
+      // the server is switching over
     }
+    if (attempt >= RETRIES) throw new Error('setup not confirmed');
+    await new Promise((resolve) => setTimeout(resolve, retryMs));
   }
 }
 
-export function App() {
+export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
   const [session, setSession] = useState<SessionResponse>();
   const [error, setError] = useState<string>();
 
@@ -30,14 +34,42 @@ export function App() {
   }, []);
   useEffect(refresh, [refresh]);
 
+  const [finishing, setFinishing] = useState<'working' | 'stuck'>();
   const afterSetup = useCallback(() => {
-    sessionWithRetry().then(setSession, (err: Error) => setError(err.message));
-  }, []);
+    setFinishing('working');
+    sessionAfterSetup(retryMs).then(
+      (next) => {
+        setSession(next);
+        setFinishing(undefined);
+      },
+      () => setFinishing('stuck'),
+    );
+  }, [retryMs]);
 
   if (error) {
     return (
       <div className="login">
         <p className="error-text">Cannot reach the Kasa Home server: {error}</p>
+      </div>
+    );
+  }
+  if (finishing) {
+    return (
+      <div className="login">
+        <div className="panel login-card">
+          {finishing === 'working' ? (
+            <p role="status">Finishing setup…</p>
+          ) : (
+            <>
+              <p className="error-text" role="alert">
+                Setup is taking longer than expected.
+              </p>
+              <button className="btn btn-primary" type="button" onClick={afterSetup}>
+                Try again
+              </button>
+            </>
+          )}
+        </div>
       </div>
     );
   }

@@ -150,3 +150,21 @@ it('sends the other two camera choices to the onboarding callback', async () => 
   await user.click(screen.getByRole('button', { name: /I have a TP-Link account/ }));
   expect(onOnboarding).toHaveBeenLastCalledWith('account');
 });
+
+it('retries once quietly when the server is restarting', async () => {
+  const user = userEvent.setup();
+  const onDone = vi.fn();
+  let tries = 0;
+  fetchMock.mockImplementation((path) => {
+    if (path === '/api/setup/password') return Promise.resolve(reply({ status: 204 }));
+    if (tries++ === 0) return Promise.reject(new TypeError('fetch failed'));
+    return Promise.resolve(reply({ body: { saved: { alias: 'N', model: 'E', host: 'h' } } }));
+  });
+  render(<SetupWizard onDone={onDone} />);
+  await toExistingCamera(user);
+  await user.type(screen.getByLabelText('Kasa email'), 'a@b.c');
+  await user.type(screen.getByLabelText('Kasa password'), 'x');
+  await user.click(screen.getByRole('button', { name: 'Connect' }));
+  await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1), { timeout: 3000 });
+  expect(screen.queryByRole('alert')).toBeNull();
+});
