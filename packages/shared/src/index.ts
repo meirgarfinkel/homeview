@@ -94,6 +94,8 @@ export interface SessionResponse {
   local: boolean;
   /** True when the server runs inside the desktop app. */
   desktop: boolean;
+  /** The address phones use. Only sent to this computer, and only when it has a LAN address. */
+  lanUrl?: string;
 }
 
 export interface ApiError {

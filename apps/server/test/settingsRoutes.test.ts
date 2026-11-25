@@ -382,3 +382,62 @@ describe('app routes', () => {
     }
   });
 });
+
+describe('GET /api/session lanUrl', () => {
+  it('gives the phone address to this computer only', async () => {
+    const settings = new SettingsStore(tmp());
+    settings.save({ camera: { username: USER, password: PASS, localOnly: false } });
+    const config = loadConfig(
+      { ...env, ALLOW_NO_PASSWORD: 'true', ALLOWED_CIDRS: '127.0.0.0/8,192.168.0.0/16' },
+      settings.load(),
+    );
+    config.dataDir = tmp();
+    const lanUrl = 'https://192.168.1.10:8090';
+    const app = await buildApp({
+      config,
+      settings,
+      logger: silentLogger,
+      reload: async () => {},
+      lanUrl: () => lanUrl,
+    });
+    try {
+      const headers = { host: '192.168.1.10:8090' };
+      const local = await app.inject({ url: '/api/session', remoteAddress: '127.0.0.1', headers });
+      expect(local.json()).toMatchObject({ local: true, lanUrl });
+      // A forged forwarding header changes nothing: only the socket peer counts.
+      const other = await app.inject({
+        url: '/api/session',
+        remoteAddress: '192.168.1.50',
+        headers: { ...headers, 'x-forwarded-for': '127.0.0.1' },
+      });
+      expect(other.json()).toMatchObject({ local: false });
+      expect(other.json()).not.toHaveProperty('lanUrl');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('leaves lanUrl out when the computer has no LAN address', async () => {
+    const settings = new SettingsStore(tmp());
+    settings.save({ camera: { username: USER, password: PASS, localOnly: false } });
+    const config = loadConfig({ ...env, ALLOW_NO_PASSWORD: 'true' }, settings.load());
+    config.dataDir = tmp();
+    const app = await buildApp({
+      config,
+      settings,
+      logger: silentLogger,
+      reload: async () => {},
+      lanUrl: () => undefined,
+    });
+    try {
+      const res = await app.inject({
+        url: '/api/session',
+        remoteAddress: '127.0.0.1',
+        headers: { host: 'localhost:8090' },
+      });
+      expect(res.json()).not.toHaveProperty('lanUrl');
+    } finally {
+      await app.close();
+    }
+  });
+});

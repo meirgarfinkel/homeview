@@ -59,13 +59,19 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
 
   app.get('/api/health', async () => ({ ok: true }));
 
-  app.get('/api/session', async (req): Promise<SessionResponse> => ({
-    authRequired: !deps.openAccess,
-    authenticated: deps.isAuthenticated(req),
-    setupComplete: deps.config.setupComplete,
-    local: isLoopback(req.ip),
-    desktop: deps.desktop ?? deps.config.desktop,
-  }));
+  app.get('/api/session', async (req): Promise<SessionResponse> => {
+    const local = isLoopback(req.ip);
+    // Only this computer gets the phone address. req.ip is the socket peer (trustProxy is off).
+    const lanUrl = local ? deps.lanUrl?.() : undefined;
+    return {
+      authRequired: !deps.openAccess,
+      authenticated: deps.isAuthenticated(req),
+      setupComplete: deps.config.setupComplete,
+      local,
+      desktop: deps.desktop ?? deps.config.desktop,
+      ...(lanUrl ? { lanUrl } : {}),
+    };
+  });
 
   app.post<{ Body: { password: string } }>(
     '/api/login',
