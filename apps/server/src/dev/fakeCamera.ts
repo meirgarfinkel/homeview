@@ -187,6 +187,11 @@ export class FakeCamera {
     this.osdTime = opts.setupMode ? 'off' : 'on';
   }
 
+  /** After an ignored set_uplink: answer again, as if the camera found its way back. */
+  reappear(): void {
+    this.lost = false;
+  }
+
   get activeStreams(): number {
     return this.active.size;
   }

@@ -279,9 +279,15 @@ export class Onboarding {
     const cam = this.cam!;
     const login = this.login!;
     const wifi = this.wifi!;
-    this.retryFrom = 'reset-camera';
-    this.set('waiting-for-camera');
-    this.note('Waiting for the camera to join your home network (up to 2 minutes)');
+    // A camera that is slow to show up needs another wait, not a reset.
+    this.retryFrom = 'waiting-for-camera';
+    // By hand, the person still has to rejoin the home Wi-Fi, and the camera
+    // showing up there is the sign that they have. So the job stays on that
+    // step (and its instruction) while it waits.
+    this.set(this.opts.switcher.auto ? 'waiting-for-camera' : 'return-home');
+    this.note(
+      `Waiting for the camera to join your home network (up to ${this.timeout('homeMs') / 60_000} minutes)`,
+    );
     const sameCamera = (d: DiscoveredDevice) =>
       (cam.deviceId !== '' && d.deviceId === cam.deviceId) || (cam.mac !== '' && d.mac === cam.mac);
     const d = this.opts.discovery ?? {};
@@ -290,12 +296,11 @@ export class Onboarding {
     ]);
     if (!onHome) {
       throw new OnboardingError(
-        "The camera didn't show up. Check the Wi-Fi password and that the network is 2.4 GHz, then reset and try again.",
+        "The camera didn't show up on your home Wi-Fi. Make sure this computer is back on it and try again. If it still doesn't show up, check the Wi-Fi password and that the network is 2.4 GHz, then start over with a camera reset.",
       );
     }
     this.note(`The camera is on your network at ${onHome.host}.`);
 
-    this.retryFrom = 'waiting-for-camera';
     this.set('finishing');
     const target = this.target(onHome.host);
     const homeLogin = await findWorkingLogin(target, [login.candidate]);
@@ -371,7 +376,8 @@ export class Onboarding {
   private timeout(which: 'cameraWifiMs' | 'homeMs'): number {
     const given = this.opts.timeouts?.[which];
     if (given !== undefined) return given;
-    if (which === 'homeMs') return 120_000;
+    // By hand, rejoining the home Wi-Fi comes first.
+    if (which === 'homeMs') return this.opts.switcher.auto ? 2 * 60_000 : 5 * 60_000;
     // nmcli has already joined; by hand it can take a while.
     return this.opts.switcher.auto ? 30_000 : 10 * 60_000;
   }

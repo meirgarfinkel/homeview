@@ -399,7 +399,11 @@ export function Onboarding({
         waiting
       ) : (
         <Screen key="return" title="Rejoin your home Wi-Fi">
-          <p>Switch this computer back to your home Wi-Fi. This page carries on by itself.</p>
+          <p>
+            The camera is joining your home Wi-Fi. Switch this computer back to it too: open the
+            Wi-Fi menu and choose your home network. This page carries on by itself once the camera
+            shows up there (up to 5 minutes).
+          </p>
           {errorLine}
           {notice}
           {cancelButton}

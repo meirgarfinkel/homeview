@@ -140,13 +140,46 @@ describe('Onboarding', () => {
     await waitFor(() => job.status().phase === 'choose-wifi');
     job.answer({ type: 'wifi', ssid: 'HomeNet', passphrase: 'wrong', alias: 'nursery' });
     await waitFor(() => job.status().phase === 'failed', 5000);
-    expect(job.status().error?.retryFrom).toBe('reset-camera');
+    // A slow camera only needs another wait, not a reset.
+    expect(job.status().error?.retryFrom).toBe('waiting-for-camera');
     expect(job.status().error?.message).toMatch(/2\.4 GHz/);
     expect(saved).not.toHaveBeenCalled();
 
     job.answer({ type: 'retry' });
-    expect(job.status().phase).toBe('reset-camera');
+    expect(job.status().phase).toBe('waiting-for-camera');
     expect(job.status().error).toBeUndefined();
+    fake.reappear();
+    await waitFor(() => job.status().phase === 'done', 10_000);
+    expect(saved).toHaveBeenCalledTimes(1);
+  });
+
+  it('manual Wi-Fi: asks to rejoin the home Wi-Fi while it waits for the camera', async () => {
+    await fake.stop();
+    await startFake({ ignoreUplink: true });
+    const phases: string[] = [];
+    const job = new Onboarding({
+      mode: 'local',
+      switcher: { ...testSwitcher(), auto: false },
+      onSaved: () => {},
+      ...fakeTargets,
+      timeouts: { ...fakeTargets.timeouts, homeMs: 500 },
+      onEvent: (e) => {
+        if (e.type === 'status') phases.push(e.status.phase);
+      },
+    });
+    job.answer({ type: 'camera-reset' });
+    await waitFor(() => job.status().phase === 'choose-wifi');
+    job.answer({ type: 'wifi', ssid: 'HomeNet', passphrase: 'x', alias: 'nursery' });
+    await waitFor(() => fake.commands.some((c) => c.method === 'set_uplink'));
+    await waitFor(() => job.status().phase === 'return-home');
+    await waitFor(() => job.status().phase === 'failed', 5000);
+    expect(phases).not.toContain('waiting-for-camera');
+    expect(job.status().error?.retryFrom).toBe('waiting-for-camera');
+
+    job.answer({ type: 'retry' });
+    expect(job.status().phase).toBe('return-home');
+    fake.reappear();
+    await waitFor(() => job.status().phase === 'done', 10_000);
   });
 
   it('fails when no camera answers on its Wi-Fi, and can retry from joining', async () => {

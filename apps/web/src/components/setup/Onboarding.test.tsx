@@ -134,6 +134,9 @@ it('sends camera-reset and shows each phase heading', async () => {
   polls = [status({ phase: 'return-home', autoWifi: false })];
   await tick();
   expect(screen.getByRole('heading', { name: 'Rejoin your home Wi-Fi' })).toBeTruthy();
+  // By hand, this screen stays up while the server waits for the camera.
+  expect(screen.getByText(/open the Wi-Fi menu and choose your home network/)).toBeTruthy();
+  expect(screen.getByText(/once the camera shows up there \(up to 5 minutes\)/)).toBeTruthy();
 });
 
 it('shows different join text for manual and auto', async () => {
