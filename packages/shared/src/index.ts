@@ -94,6 +94,10 @@ export interface SessionResponse {
   local: boolean;
   /** True when the server runs inside the desktop app. */
   desktop: boolean;
+  /** True when this request came through the remote tunnel. Absent means false. */
+  remote?: boolean;
+  /** True when remote access is on and reachable. Absent means false. */
+  remoteOn?: boolean;
   /** The address phones use. Only sent to this computer, and only when it has a LAN address. */
   lanUrl?: string;
 }
@@ -163,3 +167,29 @@ export type OnboardingAnswer =
   | { type: 'camera-reset' }
   | { type: 'wifi'; ssid: string; passphrase: string; alias: string }
   | { type: 'retry' };
+
+export type RemotePhase = 'off' | 'starting' | 'sign-in' | 'approve' | 'on' | 'problem';
+
+export interface RemoteDevice {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastSeenAt?: string;
+}
+
+export interface RemoteStatus {
+  /** The helper is installed (desktop app). */
+  available: boolean;
+  enabled: boolean;
+  phase: RemotePhase;
+  /** Set when the phase is 'on'. */
+  url?: string;
+  /** Set when the phase is 'problem'. */
+  message?: string;
+  devices: RemoteDevice[];
+}
+
+export interface PairCodeResponse {
+  url: string;
+  expiresAt: string;
+}
