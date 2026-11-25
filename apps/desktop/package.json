@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsup",
     "start": "pnpm build && electron dist/main.mjs",
-    "dist": "pnpm build && electron-builder --publish never",
+    "dist": "pnpm --filter @kasa/tunnel build && pnpm build && electron-builder --publish never",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },

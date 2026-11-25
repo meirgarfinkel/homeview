@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { app } from 'electron';
 import { pino } from 'pino';
 import { startServer, type RunningServer } from '../../server/src/server.js';
@@ -11,14 +13,20 @@ import { safeStorageProtector } from './protector.js';
 /**
  * Check that the built app can run the server: start it on a fresh data
  * folder and a free port, and ask it for its health and session. Prints
- * SELF-TEST OK and returns 0, or prints the error and returns 1.
+ * SELF-TEST OK and returns 0, or prints the error and returns 1. Also runs
+ * the tunnel helper with --version, never with a secret.
  */
-export async function runSelfTest(staticDir: string): Promise<number> {
+export async function runSelfTest(staticDir: string, tunnel: string | undefined): Promise<number> {
   const dir = mkdtempSync(path.join(tmpdir(), 'kasa-home-self-test-'));
   app.setPath('userData', dir);
   let server: RunningServer | undefined;
   try {
     await app.whenReady();
+    if (!tunnel) throw new Error('The tunnel helper is missing');
+    const { stdout } = await promisify(execFile)(tunnel, ['--version'], { timeout: 10_000 });
+    if (!stdout.startsWith('kasa-tunnel ')) {
+      throw new Error(`The tunnel helper printed ${JSON.stringify(stdout)} for --version`);
+    }
     const logger = pino(
       { level: 'info' },
       pino.destination({ dest: openLogFile(dir), sync: true }),

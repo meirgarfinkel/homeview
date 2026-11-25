@@ -9,6 +9,8 @@ files:
 extraResources:
   - from: ../web/dist
     to: web
+  - from: ../tunnel/bin/${os}
+    to: tunnel
 # Never upload from a build; the release workflow publishes the files.
 publish: null
 

@@ -53,6 +53,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/tunnel/go.mod
+          cache-dependency-path: apps/tunnel/go.sum
       - run: pnpm install --frozen-lockfile
       # The desktop dist script does not build the web app it packages.
       - run: pnpm --filter @kasa/web build

@@ -12,6 +12,7 @@ import { keepLogSmall, openLogFile } from './logs.js';
 import { safeStorageProtector } from './protector.js';
 import { runSelfTest } from './selfTest.js';
 import { createTray } from './tray.js';
+import { tunnelBinary } from './tunnelBinary.js';
 
 // Before anything reads userData, so settings land in a "Kasa Home" folder.
 app.setName('Kasa Home');
@@ -43,6 +44,16 @@ process.on('unhandledRejection', (err) => {
 function staticDir(): string {
   if (app.isPackaged) return path.join(process.resourcesPath, 'web');
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');
+}
+
+/** The tunnel helper next to the app, or in the repo's build. */
+function helperPath(): string | undefined {
+  return tunnelBinary({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appRoot: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
+    platform: process.platform,
+  });
 }
 
 async function run(): Promise<void> {
@@ -97,6 +108,8 @@ async function run(): Promise<void> {
   const log = pino({ level: 'info', redact: loggerOptions('info').redact }, dest);
   logger = log;
 
+  const helper = helperPath();
+  if (!helper) log.warn('The tunnel helper is missing, so remote access is not available');
   const server = await startServer({
     // Only these values: .env and the shell never change the installed app.
     env: { LOG_LEVEL: 'info' },
@@ -113,6 +126,8 @@ async function run(): Promise<void> {
     },
     desktop: true,
     logger: log,
+    tunnel: helper ? { command: helper } : undefined,
+    openExternal: (url) => void shell.openExternal(url),
   });
   running.server = server;
 
@@ -133,7 +148,7 @@ async function run(): Promise<void> {
 }
 
 if (process.argv.includes('--self-test')) {
-  void runSelfTest(staticDir()).then((code) => app.exit(code));
+  void runSelfTest(staticDir(), helperPath()).then((code) => app.exit(code));
 } else {
   run().catch(fail);
 }
