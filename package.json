@@ -21,6 +21,7 @@
     "format:check": "prettier --check .",
     "discover": "pnpm --filter @kasa/server discover",
     "probe": "pnpm --filter @kasa/server probe",
+    "setup-camera": "pnpm --filter @kasa/server setup-camera",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
   },
   "devDependencies": {

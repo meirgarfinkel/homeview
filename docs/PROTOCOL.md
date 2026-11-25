@@ -108,6 +108,59 @@ Modules present in the app: `OSD`, `audio`, `battery`, `camSchedule`, `cloud`,
   ("parameter value error"). Omitting `speed` returns `-41202` ("parameter
   format error").
 
+## Setting up a camera (onboarding)
+
+The Kasa app's camera command list (`LinkieCameraCommand`) includes the
+commands needed to set up a camera. The full setup flow below was verified on
+a factory-reset KC410S (fw 2.3.27); commands not used by it come from the app
+and are untested.
+
+| Module (`smartlife.cam.ipcamera.*`) | Method                                                          | Fields                                                                       |
+| ----------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `cloud`                             | `get_info` (**verified**)                                       | → `binded`, `username`, `cld_connection`                                     |
+| `cloud`                             | `set_bind`, `set_unbind`                                        | `username`, `password`                                                       |
+| `wireless`                          | `set_start_scan`                                                | `band`, `scan_type`                                                          |
+| `wireless`                          | `get_ap_list`                                                   | `band`, `scan` → `ap_info[]`                                                 |
+| `wireless`                          | `get_uplink` (**verified**)                                     | → `uplink_info[]`: `ssid`, `passphrase`, `band`, `wpa_mode`, `encryption`    |
+| `wireless`                          | `set_uplink`                                                    | `ssid`, `passphrase`, `band`, `wpa_mode`, `encryption`, `key_index`, `apply` |
+| `wireless`                          | `set_apply_changes`                                             | `delay`                                                                      |
+| `system`                            | `get_onboarding_status` (**verified**), `set_onboarding_status` | `value` (`"done"` when set up)                                               |
+| `system`                            | `set_alias`                                                     | `value`                                                                      |
+| `system`                            | `set_dev_location`                                              | `latitude`, `longitude`                                                      |
+| `system`                            | `set_change_local_password`                                     | `c_opt`, `passphrase`                                                        |
+| `system`                            | `set_reset_config`                                              | `isfullreset`                                                                |
+
+On the KC410S, `wireless.get_connect_status` returns `-10008` (unsupported),
+and `get_uplink` returns the Wi-Fi password in plain text to any client with
+the account login. Values seen on a WPA2 network: `band: "2G"`,
+`wpa_mode: "WPA2_PSK"`, `encryption: "AES"`.
+
+A camera in setup mode broadcasts its own **open** Wi-Fi, named like
+`Kasa_Cam_1A2B`. The KC410S answers there at `192.168.0.10` (the app's code
+also mentions `192.168.191.1` and `192.168.0.1`). Verified on a reset KC410S:
+
+- The login is `admin` / `admin`, with the password MD5-encoded as usual.
+- `wireless.get_ap_list` works after `set_start_scan`. `wpa_mode` values seen
+  include `WPA2_PSK` and `WPA_AUTO`.
+- `set_uplink` rejects `key_index: "0"` with `-31006` ("The parameter
+  [key_index] error."). `key_index` is a WEP field; leave it out. Accepted:
+  `{ssid, passphrase, band: "2G", wpa_mode: "WPA2_PSK", encryption: "AES", apply: true}`.
+  The camera then leaves its setup network and joins the home Wi-Fi within
+  about a minute.
+- On the home network the setup login still works. `system.set_alias` and
+  `system.set_onboarding_status {value: "done"}` succeed with it.
+- `cloud.set_bind {username, password}` takes the account password **as
+  typed** (not MD5). From then on the camera accepts only the account login. The camera
+  has no internet there, so the app sends the Wi-Fi details first and links the
+  account (`set_bind`) only once the camera is on the home network.
+
+Not yet tested: whether a camera that's never linked (local-only) streams
+video, and models other than the KC410S.
+
+`pnpm setup-camera` implements this flow. For other models it still tries a
+few fallbacks (another `key_index`, MD5 for `set_bind`) and reports which
+worked.
+
 ## Live stream: `GET https://<cam>:19443/https/stream/mixed`
 
 Query, as the app builds it (`TPLocalStreamingClient`):

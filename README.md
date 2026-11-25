@@ -60,6 +60,7 @@ Check that the camera is reachable and the credentials work:
 ```bash
 pnpm discover   # lists Kasa devices on the network
 pnpm probe      # checks login, stream and pan/tilt (never moves the camera)
+pnpm setup-camera  # sets up a new or reset camera without the app
 ```
 
 Build and run:
@@ -77,6 +78,34 @@ it.
 
 To keep it running in the background, use your system's service manager
 (systemd, launchd, pm2, Docker and so on) to run `pnpm start` in this folder.
+
+## Setting up a new camera without the app
+
+`pnpm setup-camera` puts a new or factory-reset camera on your Wi-Fi from this
+computer, no phone needed. It:
+
+1. joins this computer to the camera's setup Wi-Fi (automatically with
+   NetworkManager's `nmcli` on Linux, otherwise it asks you to);
+2. shows the Wi-Fi networks the camera can see and sends it your network's
+   name and password;
+3. rejoins your home Wi-Fi, finds the camera there, names it, and links it to
+   your TP-Link account. You can choose local-only instead, which never links
+   it to an account;
+4. offers to save the camera's address (and, for local-only, its login) to
+   `.env`.
+
+You need a TP-Link ID to link an account; one can be created in a browser at
+[myproducts.tp-link.com](https://myproducts.tp-link.com). Local-only needs no
+account, but leaves the camera on its default `admin`/`admin` login, which
+anyone on your Wi-Fi could use.
+
+Tested start to finish on a factory-reset KC410S, linked to an account.
+Local-only setup and other models haven't been tried on real hardware yet. If
+it fails part-way, the Kasa app can still set the camera up as usual. Details
+in [docs/PROTOCOL.md](docs/PROTOCOL.md#setting-up-a-camera-onboarding).
+
+To rehearse without a camera, run `FAKE_CAMERA_SETUP=1 pnpm dev:fake-camera`
+and follow what it prints.
 
 ## Configuration
 
@@ -124,6 +153,7 @@ The camera's own local protocol is weak, and this project can't change that:
 - Control commands are only obfuscated.
 - Its TLS has no forward secrecy.
 - It tells anyone on the LAN the location set in the Kasa app.
+- It returns your Wi-Fi password in plain text to anyone with the Kasa login.
 
 Recommendations:
 

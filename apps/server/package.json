@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "fake-camera": "tsx src/scripts/fakeCamera.ts",
     "discover": "tsx src/scripts/discover.ts",
-    "probe": "tsx src/scripts/probe.ts"
+    "probe": "tsx src/scripts/probe.ts",
+    "setup-camera": "tsx src/scripts/setupCamera.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.12",

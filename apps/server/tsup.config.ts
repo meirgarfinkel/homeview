@@ -5,6 +5,7 @@ export default defineConfig({
     index: 'src/index.ts',
     discover: 'src/scripts/discover.ts',
     probe: 'src/scripts/probe.ts',
+    'setup-camera': 'src/scripts/setupCamera.ts',
   },
   format: ['esm'],
   target: 'node22',

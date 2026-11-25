@@ -1,3 +1,4 @@
+import dgram from 'node:dgram';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import https from 'node:https';
@@ -92,6 +93,32 @@ export interface FakeCameraOptions {
   omitPartLength?: boolean;
   /** Send PTZ commands as unsupported. */
   noPtz?: boolean;
+  /**
+   * Start like a factory-reset camera: not linked to an account, accepting
+   * only this login until `cloud.set_bind` links `username`/`password`.
+   */
+  setupMode?: {
+    login: { username: string; password: string; encoding: PasswordEncoding };
+    networks?: FakeWifiNetwork[];
+    /** Reject set_uplink when this field is present, to test the fallbacks. */
+    rejectUplinkField?: string;
+  };
+}
+
+export interface FakeWifiNetwork {
+  ssid: string;
+  rssi: number;
+  wpa_mode: string;
+  encryption: string;
+  band?: string;
+}
+
+export interface FakeUplink {
+  ssid: string;
+  passphrase: string;
+  band: string;
+  wpa_mode: string;
+  encryption: string;
 }
 
 export interface RecordedCommand {
@@ -102,7 +129,12 @@ export interface RecordedCommand {
 
 export class FakeCamera {
   readonly commands: RecordedCommand[] = [];
+  bound: boolean;
+  alias: string;
+  onboardingStatus: string;
+  uplink: FakeUplink | undefined;
   private streamServer: https.Server | undefined;
+  private discoverySocket: dgram.Socket | undefined;
   private apiServer: https.Server | undefined;
   private readonly active = new Set<{ end(): void }>();
   private readonly startedAt = performance.now();
@@ -110,13 +142,17 @@ export class FakeCamera {
   private audioPhase = 0;
   private readonly audioListeners = new Set<(chunk: Buffer) => void>();
 
-  constructor(private readonly opts: FakeCameraOptions) {}
+  constructor(private readonly opts: FakeCameraOptions) {
+    this.bound = !opts.setupMode;
+    this.alias = opts.alias ?? 'fake nursery';
+    this.onboardingStatus = opts.setupMode ? 'none' : 'done';
+  }
 
   get activeStreams(): number {
     return this.active.size;
   }
 
-  async start(host = '127.0.0.1', streamPort = 0, apiPort = 0) {
+  async start(host = '127.0.0.1', streamPort = 0, apiPort = 0, discoveryPort?: number) {
     const pems = await generate([{ name: 'commonName', value: 'fake-kasa-camera' }], {
       keySize: 2048,
       notAfterDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -131,12 +167,35 @@ export class FakeCamera {
     this.opts.video.start();
     this.startAudio();
     return {
+      ...(discoveryPort !== undefined
+        ? { discoveryPort: await this.startDiscovery(host, discoveryPort) }
+        : {}),
       streamPort: (this.streamServer.address() as AddressInfo).port,
       apiPort: (this.apiServer.address() as AddressInfo).port,
     };
   }
 
+  /** Answer UDP get_sysinfo like a real camera, so discovery can find it. */
+  private startDiscovery(host: string, port: number): Promise<number> {
+    const socket = dgram.createSocket('udp4');
+    this.discoverySocket = socket;
+    socket.on('message', (msg, rinfo) => {
+      try {
+        const req = decryptJson<Record<string, Record<string, unknown>>>(msg);
+        if (!req['system']?.['get_sysinfo']) return;
+      } catch {
+        return;
+      }
+      const reply = { system: { get_sysinfo: this.respond('system', 'get_sysinfo', {}) } };
+      socket.send(encryptJson(reply), rinfo.port, rinfo.address);
+    });
+    return new Promise((resolve) =>
+      socket.bind(port, host, () => resolve((socket.address() as AddressInfo).port)),
+    );
+  }
+
   async stop(): Promise<void> {
+    this.discoverySocket?.close();
     this.opts.video.stop();
     clearInterval(this.audioTimer);
     for (const s of this.active) s.end();
@@ -159,8 +218,9 @@ export class FakeCamera {
   }
 
   private authorized(header: string | undefined): boolean {
+    const login = this.bound ? this.opts : this.opts.setupMode!.login;
     const expected = Buffer.from(
-      `${this.opts.username}:${encodePassword(this.opts.password, this.opts.encoding)}`,
+      `${login.username}:${encodePassword(login.password, login.encoding)}`,
     ).toString('base64');
     return header === `Basic ${expected}`;
   }
@@ -263,7 +323,7 @@ export class FakeCamera {
         const moduleOut: Record<string, unknown> = {};
         for (const [method, args] of Object.entries(methods ?? {})) {
           this.commands.push({ module, method, args });
-          moduleOut[method] = this.respond(module, method);
+          moduleOut[method] = this.respond(module, method, (args ?? {}) as Record<string, unknown>);
         }
         out[module] = moduleOut;
       }
@@ -271,14 +331,86 @@ export class FakeCamera {
     });
   }
 
-  private respond(module: string, method: string): Record<string, unknown> {
+  private respond(
+    module: string,
+    method: string,
+    args: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const ok = { err_code: 0 };
+    const cam = (name: string) => module === `smartlife.cam.ipcamera.${name}`;
+    if (cam('cloud')) {
+      if (method === 'get_info') {
+        return {
+          ...ok,
+          binded: this.bound,
+          cld_connection: this.bound,
+          username: this.bound ? this.opts.username : '',
+        };
+      }
+      if (method === 'set_bind') {
+        // A real KC410S takes the account password as typed.
+        if (args['username'] !== this.opts.username || args['password'] !== this.opts.password) {
+          return { err_code: -20601, err_msg: 'Incorrect email or password' };
+        }
+        this.bound = true;
+        return ok;
+      }
+    }
+    if (cam('wireless')) {
+      if (method === 'set_start_scan' || method === 'set_apply_changes') return ok;
+      if (method === 'get_ap_list') {
+        const networks = this.opts.setupMode?.networks ?? [];
+        return { ...ok, ap_info: networks.map((n) => ({ band: '2G', ...n })) };
+      }
+      if (method === 'set_uplink') {
+        const field = (k: string) => (typeof args[k] === 'string' ? (args[k] as string) : '');
+        if (!field('ssid')) return { err_code: -40101, err_msg: 'parameter format error' };
+        // A real KC410S (fw 2.3.27) rejects key_index "0" on a WPA2 network.
+        if (args['key_index'] === '0' || args['key_index'] === 0) {
+          return { err_code: -31006, err_msg: 'The parameter [key_index] error.' };
+        }
+        if (
+          this.opts.setupMode?.rejectUplinkField &&
+          this.opts.setupMode.rejectUplinkField in args
+        ) {
+          const name = this.opts.setupMode.rejectUplinkField;
+          return { err_code: -31006, err_msg: `The parameter [${name}] error.` };
+        }
+        this.uplink = {
+          ssid: field('ssid'),
+          passphrase: field('passphrase'),
+          band: field('band'),
+          wpa_mode: field('wpa_mode'),
+          encryption: field('encryption'),
+        };
+        return ok;
+      }
+      if (method === 'get_uplink') {
+        return { ...ok, uplink_info: this.uplink ? [{ ...this.uplink, connected: true }] : [] };
+      }
+      if (method === 'get_connect_status')
+        return { err_code: -10008, err_msg: 'Unsupported API call.' };
+    }
+    if (cam('system')) {
+      if (method === 'set_alias' && typeof args['value'] === 'string') {
+        this.alias = args['value'];
+        return ok;
+      }
+      if (method === 'set_onboarding_status' && typeof args['value'] === 'string') {
+        this.onboardingStatus = args['value'];
+        return ok;
+      }
+      if (method === 'get_onboarding_status') return { ...ok, value: this.onboardingStatus };
+    }
     if (module === 'system' && method === 'get_sysinfo') {
       return {
         system: {
-          alias: this.opts.alias ?? 'fake nursery',
+          alias: this.alias,
           model: 'KC410S(US)',
           sw_ver: '2.3.27 Build 20241112 rel.72250',
           type: 'IOT.IPCAMERA',
+          mac: '00:00:5E:00:53:01',
+          deviceId: 'FAKE0000000000000000000000000000000000',
           resolution: '2560x1440',
           rssi: -55,
           led_status: 'off',
