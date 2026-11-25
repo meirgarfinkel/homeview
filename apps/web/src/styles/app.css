@@ -676,3 +676,41 @@ fieldset.field {
   flex-direction: column;
   gap: 12px;
 }
+
+/* ---------- away from home ---------- */
+
+.away-url {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.devices {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.device-line {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.small-link {
+  align-self: flex-start;
+  font-size: 0.78rem;
+}
+
+.pair-tip {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  text-align: center;
+  pointer-events: none;
+}

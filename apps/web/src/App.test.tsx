@@ -17,6 +17,7 @@ vi.mock('./components/Monitor', async () => {
     ),
   };
 });
+vi.mock('./components/Pair', () => ({ Pair: () => <p>Pair page</p> }));
 vi.mock('./components/setup/AllSet', () => ({
   AllSet: ({ lanUrl, onContinue }: { lanUrl?: string; onContinue(): void }) => (
     <button type="button" onClick={onContinue}>
@@ -25,9 +26,9 @@ vi.mock('./components/setup/AllSet', () => ({
   ),
 }));
 vi.mock('./components/Settings', () => ({
-  Settings: ({ onClose }: { onClose(): void }) => (
+  Settings: ({ onClose, phoneAway }: { onClose(): void; phoneAway?: boolean }) => (
     <button type="button" onClick={onClose}>
-      Settings screen
+      Settings screen{phoneAway ? ' with phone button' : ''}
     </button>
   ),
 }));
@@ -51,6 +52,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  window.history.replaceState(null, '', '/');
   vi.unstubAllGlobals();
 });
 
@@ -141,4 +143,47 @@ it('goes back to sign in when the server stops accepting this browser', async ()
   await user.click(screen.getByRole('button', { name: 'Poll status' }));
   expect(await screen.findByLabelText('Password')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Monitor screen' })).toBeNull();
+});
+
+it('shows the pairing page at /pair', async () => {
+  window.history.replaceState(null, '', '/pair#code');
+  render(<App />);
+  expect(await screen.findByText('Pair page')).toBeTruthy();
+});
+
+it('shows the not-paired page, not the sign-in form, for an unpaired phone', async () => {
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ error: 'device-not-paired', message: 'x' }), { status: 401 }),
+  );
+  render(<App />);
+  expect(await screen.findByText(/This phone isn't set up to watch from away/)).toBeTruthy();
+  expect(screen.queryByLabelText('Password')).toBeNull();
+  // One session check, not a loop.
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it('hides the Settings button when the page is reached from away', async () => {
+  fetchMock.mockResolvedValue(session(true, { local: false, remote: true, remoteOn: true }));
+  render(<App />);
+  await screen.findByRole('button', { name: 'Monitor screen' });
+  // The mocked Monitor is one button; it only calls onOpenSettings when given one.
+  const { default: userEvent } = await import('@testing-library/user-event');
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Monitor screen' }));
+  expect(screen.queryByRole('button', { name: /Settings screen/ })).toBeNull();
+});
+
+it('offers the phone button only to a phone at home while remote access is on', async () => {
+  const { default: userEvent } = await import('@testing-library/user-event');
+  const user = userEvent.setup();
+  fetchMock.mockResolvedValue(session(true, { local: false, remoteOn: true }));
+  render(<App />);
+  await user.click(await screen.findByRole('button', { name: 'Monitor screen' }));
+  expect(
+    await screen.findByRole('button', { name: 'Settings screen with phone button' }),
+  ).toBeTruthy();
+  cleanup();
+  fetchMock.mockResolvedValue(session(true, { local: false, remoteOn: false }));
+  render(<App />);
+  await user.click(await screen.findByRole('button', { name: 'Monitor screen' }));
+  expect(await screen.findByRole('button', { name: 'Settings screen' })).toBeTruthy();
 });

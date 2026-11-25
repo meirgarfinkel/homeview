@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SessionResponse } from '@kasa/shared';
-import { api, onUnauthorized } from './lib/api';
+import { api, ApiRequestError, onUnauthorized } from './lib/api';
 import { Login } from './components/Login';
+import { NotPaired } from './components/NotPaired';
+import { Pair } from './components/Pair';
 import { Monitor } from './components/Monitor';
 import { Settings } from './components/Settings';
 import { AllSet } from './components/setup/AllSet';
@@ -35,8 +37,20 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
   const [session, setSession] = useState<SessionResponse>();
   const [error, setError] = useState<string>();
 
+  /** Through the away-from-home address from a phone that was never paired. */
+  const [notPaired, setNotPaired] = useState(false);
+
   const refresh = useCallback(() => {
-    api.session().then(setSession, (err: Error) => setError(err.message));
+    api.session().then(
+      (next) => {
+        setNotPaired(false);
+        setSession(next);
+      },
+      (err: Error) => {
+        if (err instanceof ApiRequestError && err.code === 'device-not-paired') setNotPaired(true);
+        else setError(err.message);
+      },
+    );
   }, []);
   useEffect(refresh, [refresh]);
 
@@ -92,6 +106,8 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
     );
   }, [retryMs]);
 
+  if (window.location.pathname === '/pair') return <Pair />;
+  if (notPaired) return <NotPaired />;
   if (error) {
     return (
       <div className="login">
@@ -135,11 +151,19 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
       />
     );
   }
-  if (settingsOpen) return <Settings onClose={() => setSettingsOpen(false)} />;
+  if (settingsOpen) {
+    return (
+      <Settings
+        onClose={() => setSettingsOpen(false)}
+        phoneAway={!session.local && !session.remote && !!session.remoteOn}
+      />
+    );
+  }
   return (
     <Monitor
       onSignOut={session.authRequired ? () => void api.logout().then(refresh) : undefined}
-      onOpenSettings={() => setSettingsOpen(true)}
+      // Settings never open from away: the server refuses them there.
+      onOpenSettings={session.remote ? undefined : () => setSettingsOpen(true)}
     />
   );
 }

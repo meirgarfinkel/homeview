@@ -6,6 +6,8 @@ import type {
   PtzPreset,
   OnboardingAnswer,
   OnboardingStatus,
+  PairCodeResponse,
+  RemoteStatus,
   SessionResponse,
   SettingsResponse,
   SetupExistingResult,
@@ -44,8 +46,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
     credentials: 'same-origin',
   });
-  // A 401 from sign-in itself only means a wrong password.
-  if (res.status === 401 && path !== '/api/login') notifyUnauthorized();
+  // A 401 from sign-in only means a wrong password. A 401 from the session check is its own
+  // answer: re-checking the session in response would loop.
+  if (res.status === 401 && path !== '/api/login' && path !== '/api/session') notifyUnauthorized();
   if (!res.ok) {
     let body: Partial<ApiError> = {};
     try {
@@ -66,6 +69,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const post = <T = void>(path: string, body: unknown = {}) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+
+const del = (path: string) => request<void>(path, { method: 'DELETE' });
 
 const put = <T = void>(path: string, body: unknown) =>
   request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
@@ -92,6 +97,15 @@ export const api = {
     }),
   setAutostart: (enabled: boolean) => put('/api/app/autostart', { enabled }),
   quit: () => post('/api/app/quit'),
+  remote: {
+    status: () => request<RemoteStatus>('/api/remote'),
+    enable: (on: boolean) => post('/api/remote/enable', { on }),
+    openLink: () => post('/api/remote/open-link'),
+    signOut: () => post('/api/remote/sign-out'),
+    removeDevice: (id: string) => del(`/api/remote/devices/${encodeURIComponent(id)}`),
+    pairCode: () => post<PairCodeResponse>('/api/remote/pair-code'),
+    pair: (code: string) => post('/api/remote/pair', { code }),
+  },
   setup: {
     password: (password: string) => post('/api/setup/password', { password }),
     existingCamera: (username: string, password: string, alias?: string) =>

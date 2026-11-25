@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import type { SettingsResponse, SetupCamera } from '@kasa/shared';
 import { api } from '../lib/api';
 import { errorText } from '../lib/errors';
+import { AwayFromHome } from './AwayFromHome';
 import { AutostartBox } from './setup/AutostartBox';
 import { Onboarding } from './setup/Onboarding';
 
@@ -229,7 +230,41 @@ function StopSection() {
   );
 }
 
-export function Settings({ onClose }: { onClose(): void }) {
+/** On a phone signed in at home: go to the away-from-home address and pair this phone there. */
+function UseAway() {
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+
+  const go = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const { url } = await api.remote.pairCode();
+      window.location.assign(url);
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section title="Away from home">
+      <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void go()}>
+        Use this phone away from home
+      </button>
+      <Failure text={error} />
+    </Section>
+  );
+}
+
+export function Settings({
+  onClose,
+  phoneAway = false,
+}: {
+  onClose(): void;
+  /** This is a phone signed in at home while away-from-home viewing is on. */
+  phoneAway?: boolean;
+}) {
   const [settings, setSettings] = useState<SettingsResponse>();
   const [error, setError] = useState<string>();
   const [onboarding, setOnboarding] = useState(false);
@@ -281,6 +316,8 @@ export function Settings({ onClose }: { onClose(): void }) {
                 </button>
               </Section>
             )}
+            {settings.local && settings.desktop && <AwayFromHome />}
+            {phoneAway && <UseAway />}
             {settings.local && settings.desktop && settings.autostart !== null && (
               <Section title="Start when this computer starts">
                 <AutostartBox initial={settings.autostart} />

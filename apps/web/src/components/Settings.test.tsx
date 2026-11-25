@@ -174,3 +174,34 @@ it('closes', async () => {
   await user.click(screen.getByRole('button', { name: 'Back' }));
   expect(onClose).toHaveBeenCalled();
 });
+
+it('shows Away from home on the desktop computer only', async () => {
+  await open();
+  expect(screen.getByRole('heading', { name: 'Away from home' })).toBeTruthy();
+  cleanup();
+  await open({ local: false });
+  expect(screen.queryByRole('heading', { name: 'Away from home' })).toBeNull();
+  cleanup();
+  await open({ desktop: false });
+  expect(screen.queryByRole('heading', { name: 'Away from home' })).toBeNull();
+});
+
+it('lets a phone at home pair itself for use away', async () => {
+  const user = userEvent.setup();
+  const assign = vi.fn();
+  vi.stubGlobal('location', { assign });
+  reply = (path) =>
+    path === '/api/remote/pair-code'
+      ? json({ url: 'https://kasa-home.ts.net/pair#abc', expiresAt: '2026-11-26T12:00:00Z' })
+      : undefined;
+  settings = { ...base, local: false, desktop: false };
+  render(<Settings onClose={() => undefined} phoneAway />);
+  await user.click(await screen.findByRole('button', { name: 'Use this phone away from home' }));
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://kasa-home.ts.net/pair#abc'));
+  expect(calls('/api/remote/pair-code')[0]![1]?.method).toBe('POST');
+});
+
+it('hides the phone button unless asked to show it', async () => {
+  await open({ local: false });
+  expect(screen.queryByRole('button', { name: 'Use this phone away from home' })).toBeNull();
+});
