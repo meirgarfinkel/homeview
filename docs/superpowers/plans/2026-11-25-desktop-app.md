@@ -434,7 +434,7 @@ The existing redirect test changes to connect from a non-loopback address. Add a
 - Consumes: `SettingsStore`, `hashPassword`, `RunningServer.reload` (passed into `buildApp` as `deps.reload: () => Promise<void>`), `isLoopback`, `discover`, `findWorkingLogin`.
 - Produces (all JSON; shared types `SetupCamera`, `SetupExistingResult`):
   - Gate: while `!config.setupComplete`, any request from a non-loopback client gets `403 { error: 'not-set-up' }` for `/api/*` and the normal page for `/` (the page shows the not-set-up screen from `/api/session`).
-  - `POST /api/setup/password { password }` (loopback, not set up): min 8 chars, saves `viewerPasswordHash`. `204`.
+  - `POST /api/setup/password { password }` (loopback, not set up): min 8 chars, saves `viewerPasswordHash`, and responds `204` with a session cookie, so the parent is already signed in when setup finishes.
   - `POST /api/setup/existing-camera { username, password, alias? }` (loopback, not set up): discovers cameras, tries the login on each until one works (or only the one named `alias`).
     - Several cameras accept it and no `alias` given: `200 { choose: SetupCamera[] }` (`{ alias, model, host }`).
     - One works: saves `camera` (`localOnly: false`), responds `200 { saved: SetupCamera }`, then calls `reload()` after the response is sent.
@@ -448,8 +448,8 @@ The existing redirect test changes to connect from a non-loopback address. Add a
 it('refuses setup to anyone but this computer', async () => {
   /* inject with remoteAddress '192.168.1.50': POST /api/setup/password -> 403 not-set-up */
 });
-it('saves a hashed viewer password', async () => {
-  /* POST from 127.0.0.1 -> 204; store.load().viewerPasswordHash matches /^scrypt\$/ and is not the password */
+it('saves a hashed viewer password and signs this computer in', async () => {
+  /* POST from 127.0.0.1 -> 204 with Set-Cookie; store.load().viewerPasswordHash matches /^scrypt\$/ and is not the password; after setup completes, /api/status with that cookie -> 200 */
 });
 it('rejects a short viewer password', async () => {
   /* 'short' -> 400 */
@@ -697,6 +697,8 @@ it('shows the server message for a wrong login and keeps the form', async () => 
 - Consumes: `OnboardingStatus`, `OnboardingAnswer` (shared), `api.setup.*` (Task 10).
 - Produces: `<Onboarding mode="account" | "local" account?={...} onDone={() => void} onCancel={() => void} />`, polling `GET /api/setup/onboarding` every 1000 ms.
 
+Before the job starts, for `mode="account"` only, a screen "Your TP-Link account" asks for "TP-Link email" and "TP-Link password", with "No account yet? Create one free at myproducts.tp-link.com, then come back." and a "Next" button; these become the `account` sent to `POST /api/setup/onboarding`. When setup is already complete and a camera account is saved, the email field starts filled with the saved email.
+
 One screen per phase (exact headings):
 
 - `reset-camera`: "Reset the camera". Text: "Hold the camera's reset button until it resets (its manual says how long). After about a minute it starts its own Wi-Fi network, named like Kasa_Cam_1A2B." Button "The camera is reset".
@@ -708,7 +710,7 @@ One screen per phase (exact headings):
 - `failed`: the error message and "Try again" (sends `retry`) and "Cancel".
 - `done`: calls `onDone`.
 
-- [ ] **Step 1: Write the failing tests**: given a sequence of mocked statuses, the right heading shows for each phase; "Connect the camera" sends `{ type: 'wifi', ssid, passphrase, alias }`; manual vs auto `join-camera-wifi` copy differs; `failed` shows the message and "Try again" sends `retry`.
+- [ ] **Step 1: Write the failing tests**: account mode shows the TP-Link account screen first and sends its values in the start request (local mode skips it); given a sequence of mocked statuses, the right heading shows for each phase; "Connect the camera" sends `{ type: 'wifi', ssid, passphrase, alias }`; manual vs auto `join-camera-wifi` copy differs; `failed` shows the message and "Try again" sends `retry`.
 - [ ] **Step 2: Run** `cd apps/web && npx vitest run`. Expected: FAIL.
 - [ ] **Step 3: Implement**; the wizard (Task 10) routes the second and third camera choices here.
 - [ ] **Step 4: Run** `pnpm check`. Expected: PASS.
