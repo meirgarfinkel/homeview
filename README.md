@@ -164,8 +164,8 @@ source.
 
 You need a free [Tailscale](https://tailscale.com) account. Tailscale is a
 service that connects your computer to the internet and gives it a web
-address ending in `.ts.net`. The sign-in page offers Google, Apple, Microsoft
-and GitHub. Kasa Home includes the part of Tailscale it needs, so you don't
+address ending in `.ts.net`. You can sign in with an account you already
+have, such as Google or Apple. Kasa Home includes the part of Tailscale it needs, so you don't
 install the Tailscale app. You also need to have finished setup and chosen a
 viewer password, because Kasa Home won't turn this on without one.
 
@@ -185,9 +185,9 @@ it starts. A phone that is already signed in at home can do step 4 without
 the computer. Open its Settings and tap "Use this phone away from home".
 
 The address works at home and away, so a phone needs only one bookmark. Use
-"Add to Home Screen" in the browser menu. A paired phone stays signed in for
-30 days. After that, or after you change the viewer password, it asks for the
-viewer password again.
+"Add to Home Screen" in the browser menu. A paired phone stays paired. Its sign-in
+lasts 30 days. After that, or after you change the viewer password, it asks
+for the viewer password again, and you don't need to scan a new code.
 
 **What Tailscale can see.** Video, sound and the password are encrypted
 between your computer and your phone. Tailscale relays that encrypted
@@ -213,9 +213,9 @@ and any live view it has open closes.
 
 **Turn it off.** Clear the tick in "Away from home". Kasa Home stops
 sharing the address. Your paired phones are kept, so turning it back on needs
-no new scans. To also disconnect your computer from Tailscale, click "Sign
-out of Tailscale", the small link in that section. You then sign in again the
-next time you turn it on.
+no new scans. To also forget the Tailscale login, click "Sign out of
+Tailscale", the small link in that section, while it is on. That turns it off
+too. You then sign in to Tailscale again the next time you turn it on.
 
 If the section shows a problem, click "Try again".
 
