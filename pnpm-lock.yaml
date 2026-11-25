@@ -103,6 +103,8 @@ importers:
         specifier: ^8.23.0
         version: 8.23.0
 
+  apps/tunnel: {}
+
   apps/web:
     dependencies:
       qrcode-generator:

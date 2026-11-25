@@ -19,6 +19,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/tunnel/go.mod
+          cache-dependency-path: apps/tunnel/go.sum
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
 
