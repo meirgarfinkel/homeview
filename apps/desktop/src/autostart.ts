@@ -45,3 +45,13 @@ export function setAutostart(on: boolean): void {
   // An AppImage's own path changes each run; APPIMAGE is the file the user has.
   writeFileSync(file, linuxAutostartFile(process.env['APPIMAGE'] ?? process.execPath));
 }
+
+/**
+ * True when the system started the app at login, so it should stay in the
+ * tray. Windows and Linux pass --hidden; macOS starts login items without
+ * their arguments but says so itself.
+ */
+export function startedAtLogin(argv: readonly string[] = process.argv): boolean {
+  if (argv.includes(HIDDEN)) return true;
+  return process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin;
+}

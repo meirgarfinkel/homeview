@@ -73,7 +73,9 @@ export class SettingsStore {
     if (cam) {
       const password = this.decrypt(cam.passwordProtected, cam.protector);
       if (password === undefined) {
-        this.logger?.warn('the saved camera password could not be decrypted and was dropped');
+        this.logger?.warn(
+          'the saved camera password could not be decrypted; it stays saved but is not used this time',
+        );
       } else {
         settings.camera = {
           username: cam.username,
@@ -94,8 +96,9 @@ export class SettingsStore {
       ...(next.viewerPasswordHash !== undefined
         ? { viewerPasswordHash: next.viewerPasswordHash }
         : {}),
-      ...(next.camera
-        ? {
+      ...(next.camera === undefined
+        ? this.undecryptableCamera()
+        : {
             camera: {
               username: next.camera.username,
               passwordProtected: this.protector.encrypt(next.camera.password),
@@ -103,13 +106,28 @@ export class SettingsStore {
               ...(next.camera.alias !== undefined ? { alias: next.camera.alias } : {}),
               localOnly: next.camera.localOnly,
             },
-          }
-        : {}),
+          }),
     };
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(disk, null, 2)}\n`, { mode: 0o600 });
     chmodSync(tmp, 0o600);
     renameSync(tmp, this.file);
+  }
+
+  /**
+   * The saved camera, when its password can't be decrypted now (a keychain
+   * that is locked or missing at this launch). A save without a camera keeps
+   * it, so the login works again once the keychain is back.
+   */
+  private undecryptableCamera(): { camera?: NonNullable<z.infer<typeof diskSchema>['camera']> } {
+    let cam: z.infer<typeof diskSchema>['camera'];
+    try {
+      cam = diskSchema.parse(JSON.parse(readFileSync(this.file, 'utf8'))).camera;
+    } catch {
+      return {};
+    }
+    if (!cam || this.decrypt(cam.passwordProtected, cam.protector) !== undefined) return {};
+    return { camera: cam };
   }
 
   private decrypt(stored: string, kind: SecretProtector['kind']): string | undefined {

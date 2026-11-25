@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { SettingsStore, type SecretProtector } from '../src/settings/store.js';
+import { plainProtector, SettingsStore, type SecretProtector } from '../src/settings/store.js';
 import { silentLogger } from './helpers.js';
 
 const dirs: string[] = [];
@@ -63,5 +63,30 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(dir, broken, silentLogger).load()).toEqual({
       viewerPasswordHash: 'scrypt$1$a$b',
     });
+  });
+
+  it('keeps a camera password it cannot decrypt through an unrelated save', () => {
+    const dir = tmp();
+    const camera = { username: 'a@b.c', password: 'pw-123', localOnly: true };
+    new SettingsStore(dir, reversing, silentLogger).save({ viewerPasswordHash: 'old', camera });
+
+    // A launch without the keychain falls back to plain, which can't read the password.
+    const locked = new SettingsStore(dir, plainProtector, silentLogger);
+    locked.save({ ...locked.load(), viewerPasswordHash: 'new' });
+
+    expect(new SettingsStore(dir, reversing, silentLogger).load()).toEqual({
+      viewerPasswordHash: 'new',
+      camera,
+    });
+  });
+
+  it('replaces a camera password it cannot decrypt when a new camera login is saved', () => {
+    const dir = tmp();
+    new SettingsStore(dir, reversing, silentLogger).save({
+      camera: { username: 'a@b.c', password: 'pw-123', localOnly: true },
+    });
+    const camera = { username: 'new@b.c', password: 'pw-456', localOnly: false };
+    new SettingsStore(dir, plainProtector, silentLogger).save({ camera });
+    expect(new SettingsStore(dir, undefined, silentLogger).load()).toEqual({ camera });
   });
 });
