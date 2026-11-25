@@ -2,7 +2,7 @@
 
 Watch and listen to a TP-Link Kasa camera in any web browser on your home
 Wi-Fi. You don't need the Kasa phone app, and nothing goes through the
-internet. It was built to use a Kasa Spot Pan Tilt (KC410S) as a baby
+internet unless you turn on away-from-home viewing. It was built to use a Kasa Spot Pan Tilt (KC410S) as a baby
 monitor.
 
 - Live video and sound in the browser, with a sound meter and an alert when
@@ -10,6 +10,7 @@ monitor.
 - Pan and tilt the camera with on-screen buttons or the arrow keys
 - Fullscreen, picture-in-picture and snapshots
 - Works on phones, tablets and computers on your home network
+- Optional viewing away from home, with nothing to install on the phone
 - Protected by a password of your choice
 
 ## Install from the downloads
@@ -152,6 +153,71 @@ Kasa Home keeps its settings and logs in this folder:
 | Linux   | `~/.config/Kasa Home`                     |
 | Windows | `%APPDATA%\Kasa Home`                     |
 | macOS   | `~/Library/Application Support/Kasa Home` |
+
+### 6. Watch away from home
+
+By default the camera is visible only on your home Wi-Fi. Away from home
+turns that on for your phone's normal browser on any network, including
+mobile data. You install nothing on the phone and change nothing on the
+router. It is part of the desktop app. It isn't available when you run from
+source.
+
+You need a free [Tailscale](https://tailscale.com) account. Tailscale is a
+service that connects your computer to the internet and gives it a web
+address ending in `.ts.net`. The sign-in page offers Google, Apple, Microsoft
+and GitHub. Kasa Home includes the part of Tailscale it needs, so you don't
+install the Tailscale app. You also need to have finished setup and chosen a
+viewer password, because Kasa Home won't turn this on without one.
+
+1. **Turn it on.** On the computer, open Settings, find "Away from home" and
+   tick "Watch from anywhere with your phone's browser".
+2. **Sign in once.** Click "Sign in". Your browser opens Tailscale's sign-in
+   page. Sign in or create the free account.
+3. **Approve once.** Click "Approve". Tailscale asks you to allow Kasa Home
+   to share a web address. Allow it.
+4. **Add a phone.** Settings now shows your address, for example
+   `https://kasa-home.tail1234.ts.net`, and an "Add a phone" button. Click it
+   and scan the code with the phone's camera. The code works once and
+   expires after 10 minutes. The phone opens the camera.
+
+Steps 2 and 3 happen once. After that, Kasa Home reconnects by itself when
+it starts. A phone that is already signed in at home can do step 4 without
+the computer. Open its Settings and tap "Use this phone away from home".
+
+The address works at home and away, so a phone needs only one bookmark. Use
+"Add to Home Screen" in the browser menu. A paired phone stays signed in for
+30 days. After that, or after you change the viewer password, it asks for the
+viewer password again.
+
+**What Tailscale can see.** Video, sound and the password are encrypted
+between your computer and your phone. Tailscale relays that encrypted
+traffic and can't read it, so it can't see the video. It does know your
+account and that your computer is online. Kasa Home
+runs no servers of its own and sees none of your video.
+
+**What stays the same.**
+
+- The computer must stay on, with Kasa Home running, and connected to the
+  internet. If it sleeps or you quit Kasa Home, the phone can't connect.
+- Only phones you paired can reach the camera. A phone that opens the address
+  without being paired sees "This phone isn't set up to watch from away" and
+  can't try a password.
+- Settings, camera setup, password changes and "Stop Kasa Home" work only on
+  the computer. They are refused from away, even from a paired phone.
+- The address is public, so strangers can find it and open it. They get the
+  same "isn't set up" page.
+
+**Remove a phone.** In Settings on the computer, find the phone in the list
+under your address and click "Remove". It loses access on its next request,
+and any live view it has open closes.
+
+**Turn it off.** Clear the tick in "Away from home". Kasa Home stops
+sharing the address. Your paired phones are kept, so turning it back on needs
+no new scans. To also disconnect your computer from Tailscale, click "Sign
+out of Tailscale", the small link in that section. You then sign in again the
+next time you turn it on.
+
+If the section shows a problem, click "Try again".
 
 ### If something goes wrong
 
@@ -317,7 +383,8 @@ hour, so daylight saving changes are picked up.
 The page shows a live camera, so it is locked down by default:
 
 - **Local network only.** Kasa Home refuses requests from outside this
-  computer's home network, including Docker and VPN interfaces.
+  computer's home network, including Docker and VPN interfaces. Away from
+  home is the one exception, and it is off until you turn it on. See step 6.
 - **HTTPS** for video, sound, the password and the login cookie.
 - **Password required.** The server won't start without `VIEWER_PASSWORD`
   unless you set `ALLOW_NO_PASSWORD=true`. Logins use signed, HttpOnly,
@@ -331,9 +398,9 @@ The page shows a live camera, so it is locked down by default:
   your network. It stores its generated secrets in `data/`, readable only by
   your user.
 - **Nothing goes to the cloud.** The server only talks to the camera and to
-  your browsers.
+  your browsers. With away from home on, the app also connects to Tailscale.
 
-Don't port-forward this server to the internet.
+Don't port-forward this server to the internet. Use away from home instead.
 
 The camera's own local protocol is weak, and this project can't change that:
 
