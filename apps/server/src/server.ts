@@ -18,7 +18,9 @@ import {
   VIRTUAL_INTERFACE,
 } from './security/network.js';
 import { loadOrCreateCertificate, readTlsFiles } from './security/tlsCert.js';
+import type { OnboardingSlot, SetupDeps } from './routes/setup.js';
 import { SettingsStore } from './settings/store.js';
+import { createWifiSwitcher, type WifiSwitcher } from './setup/wifiSwitcher.js';
 
 export type { ServerHooks } from './app.js';
 
@@ -32,6 +34,10 @@ export interface StartServerOptions {
   logger?: Logger;
   hooks?: ServerHooks;
   desktop?: boolean;
+  /** Gets the Wi-Fi switcher for a camera setup. Tests pass a fake one. */
+  createSwitcher?: () => Promise<WifiSwitcher>;
+  /** Replaces parts of the onboarding job's options. For tests. */
+  onboardingOverrides?: SetupDeps['onboardingOverrides'];
 }
 
 export interface RunningServer {
@@ -103,6 +109,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const firstConfig = readConfig();
   const logger = opts.logger ?? createLogger(firstConfig.logLevel);
 
+  /** The camera setup job. It lives here so it survives a reload. */
+  const onboarding: OnboardingSlot = {};
   let current: Instance | undefined;
   let stopped = false;
   let retry: NodeJS.Timeout | undefined;
@@ -212,6 +220,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       ...(opts.hooks ? { hooks: opts.hooks } : {}),
       desktop: config.desktop,
       lanUrl,
+      onboarding,
+      createSwitcher: opts.createSwitcher ?? (() => createWifiSwitcher()),
+      ...(opts.onboardingOverrides ? { onboardingOverrides: opts.onboardingOverrides } : {}),
     });
 
     const listen = async (ports: number[]): Promise<Instance> => {
@@ -316,6 +327,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         stopped = true;
         logger.info('Shutting down');
         clearTimeout(retry);
+        await onboarding.job?.cancel().catch(() => undefined);
         if (current) await disposeInstance(current);
         current = undefined;
       }),

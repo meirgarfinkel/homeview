@@ -17,11 +17,18 @@ import {
   type WorkingLogin,
 } from '../kasa/setup.js';
 import { cameraTimeZone, hostTimeZone } from '../kasa/timeZone.js';
+import type {
+  OnboardingAnswer,
+  OnboardingNetwork,
+  OnboardingPhase,
+  OnboardingStatus,
+} from '@kasa/shared';
 import type { Logger } from '../logger.js';
 import type { Settings } from '../settings/store.js';
 import type { WifiSwitcher } from './wifiSwitcher.js';
 
 export type { WifiSwitcher } from './wifiSwitcher.js';
+export type { OnboardingAnswer, OnboardingNetwork, OnboardingPhase, OnboardingStatus };
 
 /**
  * Puts a new or factory-reset camera on the home Wi-Fi, step by step, so a
@@ -34,44 +41,6 @@ export type { WifiSwitcher } from './wifiSwitcher.js';
 
 /** Addresses the Kasa app expects a camera to use on its setup network. */
 export const SETUP_ADDRESSES = ['192.168.191.1', '192.168.0.1', '192.168.0.10'];
-
-export type OnboardingPhase =
-  | 'reset-camera' // waiting for the parent to say the camera is reset
-  | 'join-camera-wifi' // auto: switching; manual: waiting to see the camera at 192.168.0.10
-  | 'scanning' // asking the camera for networks
-  | 'choose-wifi' // waiting for { ssid, passphrase, alias }
-  | 'sending' // set_uplink
-  | 'return-home' // auto: switching back; manual: waiting to be on home Wi-Fi
-  | 'waiting-for-camera' // up to 120 s for the camera to appear by device ID
-  | 'finishing' // alias, clock, on-video time, account link
-  | 'done'
-  | 'failed';
-
-export interface OnboardingNetwork {
-  ssid: string;
-  /** RSSI in dBm. */
-  signal?: number;
-  open: boolean;
-  band?: string;
-  /** The camera's name for the security, such as WPA2_PSK. */
-  security?: string;
-}
-
-export interface OnboardingStatus {
-  phase: OnboardingPhase;
-  autoWifi: boolean;
-  networks?: OnboardingNetwork[]; // in choose-wifi
-  cameraNetwork?: string; // e.g. Kasa_Cam_1A2B, when known
-  /** The camera found on its setup network. */
-  camera?: { model: string; host: string; alias: string };
-  error?: { message: string; retryFrom: OnboardingPhase }; // in failed
-  result?: { alias: string; host: string; linked: boolean; warnings: string[] }; // in done
-}
-
-export type OnboardingAnswer =
-  | { type: 'camera-reset' }
-  | { type: 'wifi'; ssid: string; passphrase: string; alias: string }
-  | { type: 'retry' };
 
 /** Progress for a terminal: phase changes, lines worth showing, and one tick per poll. */
 export type OnboardingEvent =

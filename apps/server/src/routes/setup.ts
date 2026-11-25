@@ -1,9 +1,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ApiError, SetupCamera, SetupExistingResult } from '@kasa/shared';
+import type {
+  ApiError,
+  OnboardingAnswer,
+  OnboardingStatus,
+  SetupCamera,
+  SetupExistingResult,
+} from '@kasa/shared';
 import type { Config } from '../config.js';
 import { discoverCameras } from '../kasa/camera.js';
 import type { DiscoveredDevice } from '../kasa/discovery.js';
 import { findWorkingLogin } from '../kasa/setup.js';
+import { Onboarding, OnboardingStateError, type OnboardingOptions } from '../setup/onboarding.js';
+import { createWifiSwitcher, type WifiSwitcher } from '../setup/wifiSwitcher.js';
+import { isLoopback } from '../security/network.js';
 import { loadOrCreateSecret } from '../security/dataDir.js';
 import { hashPassword } from '../security/passwordHash.js';
 import { passwordCheckFromHash, sessionCookie, SessionManager } from '../security/session.js';
@@ -19,6 +28,23 @@ export interface SetupDeps {
   config: Config;
   settings: SettingsStore;
   reload?: () => Promise<void>;
+  /** True when the request has a valid session (or the page is open to all). */
+  isAuthenticated?: (req: FastifyRequest) => boolean;
+  /** Holds the onboarding job, so it outlives a rebuild of the app. */
+  onboarding?: OnboardingSlot;
+  /** How to get a Wi-Fi switcher. Defaults to the real one. */
+  createSwitcher?: () => Promise<WifiSwitcher>;
+  /** Replaces parts of the job's options. For tests. */
+  onboardingOverrides?: Partial<
+    Pick<OnboardingOptions, 'timeouts' | 'timeZone' | 'extraLogins'> & {
+      discovery: { timeoutMs?: number };
+    }
+  >;
+}
+
+/** The one onboarding job of a server. It stays when the app is rebuilt. */
+export interface OnboardingSlot {
+  job?: Onboarding;
 }
 
 export const MIN_VIEWER_PASSWORD = 8;
@@ -54,6 +80,75 @@ const unreachable: ApiError = {
   error: 'camera-unreachable',
   message: 'A Kasa camera answered but would not take a login. Wait a minute and try again.',
 };
+
+const wrongStep: ApiError = {
+  error: 'wrong-step',
+  message: "Setup isn't waiting for that now.",
+};
+
+const needNetwork: ApiError = { error: 'bad-answer', message: 'Choose a Wi-Fi network.' };
+
+const noJob: ApiError = {
+  error: 'no-onboarding',
+  message: 'No camera setup is running.',
+};
+
+const jobRunning: ApiError = {
+  error: 'onboarding-running',
+  message: 'A camera setup is already running. Cancel it first.',
+};
+
+const needAccount: ApiError = {
+  error: 'account-required',
+  message: 'Enter the email and password of your TP-Link account to link the camera.',
+};
+
+const unauthorized: ApiError = { error: 'unauthorized', message: 'Sign in required' };
+
+const loginRejected =
+  'The camera did not accept any of the usual setup logins. Reset it again and try once more.';
+
+/** The messages written for a terminal, reworded for the page. */
+function forPage(status: OnboardingStatus): OnboardingStatus {
+  if (status.error && /SETUP_LOGIN/.test(status.error.message)) {
+    return { ...status, error: { ...status.error, message: loginRejected } };
+  }
+  return status;
+}
+
+const onboardingSchema = {
+  body: {
+    type: 'object',
+    required: ['mode'],
+    additionalProperties: false,
+    properties: {
+      mode: { enum: ['account', 'local'] },
+      account: {
+        type: 'object',
+        required: ['username', 'password'],
+        additionalProperties: false,
+        properties: {
+          username: { type: 'string', minLength: 1, maxLength: 256 },
+          password: { type: 'string', minLength: 1, maxLength: 256 },
+        },
+      },
+    },
+  },
+} as const;
+
+const answerSchema = {
+  body: {
+    type: 'object',
+    required: ['type'],
+    additionalProperties: false,
+    properties: {
+      type: { enum: ['camera-reset', 'wifi', 'retry'] },
+      ssid: { type: 'string', minLength: 1, maxLength: 64 },
+      passphrase: { type: 'string', maxLength: 256 },
+      alias: { type: 'string', maxLength: 64 },
+    },
+  },
+} as const;
 
 const passwordSchema = {
   body: {
@@ -182,4 +277,119 @@ export async function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps)
       return result;
     },
   );
+
+  registerOnboardingRoutes(app, deps);
+}
+
+function registerOnboardingRoutes(app: FastifyInstance, deps: SetupDeps): void {
+  const { config, settings } = deps;
+  const slot = deps.onboarding ?? {};
+  const url = '/api/setup/onboarding';
+
+  /** This computer only, and before setup is complete or with a session. */
+  const allowed = (req: FastifyRequest, reply: FastifyReply): boolean => {
+    if (!isLoopback(req.ip)) {
+      void reply.code(403).send({
+        error: 'local-only',
+        message: 'Only the computer running Kasa Home can do this.',
+      });
+      return false;
+    }
+    if (config.setupComplete && !(deps.isAuthenticated?.(req) ?? false)) {
+      void reply.code(401).send(unauthorized);
+      return false;
+    }
+    return true;
+  };
+
+  const finished = (job: Onboarding) => ['done', 'failed'].includes(job.status().phase);
+
+  app.post<{
+    Body: { mode: 'account' | 'local'; account?: { username: string; password: string } };
+  }>(url, { schema: onboardingSchema }, async (req, reply) => {
+    if (!allowed(req, reply)) return reply;
+    if (slot.job && !finished(slot.job)) return reply.code(409).send(jobRunning);
+    const { mode } = req.body;
+    const saved = settings.load().camera;
+    const account =
+      mode === 'account'
+        ? (req.body.account ??
+          (config.setupComplete && saved
+            ? { username: saved.username, password: saved.password }
+            : undefined))
+        : undefined;
+    if (mode === 'account' && !account) return reply.code(400).send(needAccount);
+
+    const switcher = await (deps.createSwitcher ?? (() => createWifiSwitcher()))();
+    const cam = config.camera;
+    const over = deps.onboardingOverrides;
+    const job = new Onboarding({
+      mode,
+      ...(account ? { account } : {}),
+      switcher,
+      apiPort: cam.apiPort,
+      ...(cam.discoveryTargets ? { setupAddresses: cam.discoveryTargets } : {}),
+      discovery: {
+        ...(cam.discoveryTargets ? { targets: cam.discoveryTargets } : {}),
+        ...(cam.discoveryPort ? { port: cam.discoveryPort } : {}),
+        ...(over?.discovery ?? {}),
+      },
+      ...(over?.timeouts ? { timeouts: over.timeouts } : {}),
+      ...(over?.timeZone ? { timeZone: over.timeZone } : {}),
+      ...(over?.extraLogins ? { extraLogins: over.extraLogins } : {}),
+      logger: req.log as unknown as OnboardingOptions['logger'],
+      onSaved: (camera) => settings.save({ ...settings.load(), camera }),
+      onEvent: (event) => {
+        if (event.type === 'status' && event.status.phase === 'done') {
+          deps
+            .reload?.()
+            .catch((err: Error) =>
+              req.log.error({ err: err.message }, 'Could not apply the new settings'),
+            );
+        }
+      },
+    });
+    slot.job = job;
+    return reply.code(202).send(forPage(job.status()));
+  });
+
+  app.get(url, async (req, reply) => {
+    if (!allowed(req, reply)) return reply;
+    if (!slot.job) return reply.code(404).send(noJob);
+    return forPage(slot.job.status());
+  });
+
+  app.post<{ Body: OnboardingAnswer }>(
+    `${url}/answer`,
+    { schema: answerSchema },
+    async (req, reply) => {
+      if (!allowed(req, reply)) return reply;
+      const job = slot.job;
+      if (!job) return reply.code(404).send(noJob);
+      const body = req.body;
+      if (body.type === 'wifi' && !body.ssid) return reply.code(400).send(needNetwork);
+      try {
+        job.answer(
+          body.type === 'wifi'
+            ? {
+                type: 'wifi',
+                ssid: body.ssid,
+                passphrase: body.passphrase ?? '',
+                alias: body.alias ?? '',
+              }
+            : { type: body.type },
+        );
+      } catch (err) {
+        if (err instanceof OnboardingStateError) return reply.code(409).send(wrongStep);
+        throw err;
+      }
+      return forPage(job.status());
+    },
+  );
+
+  app.delete(url, async (req, reply) => {
+    if (!allowed(req, reply)) return reply;
+    await slot.job?.cancel();
+    return reply.code(204).send();
+  });
 }

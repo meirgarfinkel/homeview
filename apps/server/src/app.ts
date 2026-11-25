@@ -10,7 +10,8 @@ import type { LiveHub } from './media/liveHub.js';
 import { loggerOptions, type Logger } from './logger.js';
 import { notSetUp, registerApiRoutes } from './routes/api.js';
 import { registerLiveRoute } from './routes/live.js';
-import { registerSetupRoutes } from './routes/setup.js';
+import { registerSetupRoutes, type OnboardingSlot, type SetupDeps } from './routes/setup.js';
+import type { WifiSwitcher } from './setup/wifiSwitcher.js';
 import {
   createHostAllowlist,
   createIpAllowlist,
@@ -58,6 +59,12 @@ export interface AppDeps {
   desktop?: boolean;
   /** The address other devices on the network use, if there is one. */
   lanUrl?: () => string | undefined;
+  /** Where the onboarding job lives, so it survives a rebuild. Default: one per app. */
+  onboarding?: OnboardingSlot;
+  /** Gets the Wi-Fi switcher for a camera setup. Default: the real one. */
+  createSwitcher?: () => Promise<WifiSwitcher>;
+  /** Replaces parts of the onboarding job's options. For tests. */
+  onboardingOverrides?: SetupDeps['onboardingOverrides'];
 }
 
 /** Client networks allowed by default: this machine and its real LAN. */
@@ -182,6 +189,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       config,
       settings: deps.settings,
       ...(deps.reload ? { reload: deps.reload } : {}),
+      isAuthenticated,
+      onboarding: deps.onboarding ?? {},
+      ...(deps.createSwitcher ? { createSwitcher: deps.createSwitcher } : {}),
+      ...(deps.onboardingOverrides ? { onboardingOverrides: deps.onboardingOverrides } : {}),
     });
   }
   if (deps.hub) await registerLiveRoute(app, deps.hub);
