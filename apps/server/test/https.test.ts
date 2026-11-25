@@ -108,6 +108,7 @@ describe('HTTPS listener with HTTP redirect', () => {
     return listenHttpsWithRedirect(app, {
       host: '127.0.0.1',
       port: 0,
+      tls,
       allowClient: (ip) => ip === '127.0.0.1',
       ...(isLocalClient ? { isLocalClient } : {}),
     });

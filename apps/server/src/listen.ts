@@ -1,27 +1,52 @@
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import { isLoopback } from './security/network.js';
 
 /**
- * Listen on one port for both HTTPS and plain HTTP.
+ * Listen on one port, and keep it and its connections open while the app
+ * behind it changes.
  *
- * Fastify owns an HTTPS server that is never bound directly. A small TCP
- * front-end peeks at the first byte of each connection: a TLS ClientHello
- * (0x16) is handed to the HTTPS server. Plain HTTP from this computer is
- * served as is, so http://localhost:8090 opens with no certificate warning.
- * Plain HTTP from anywhere else gets a redirect to the https:// URL, so
- * typing http://192.168.1.20:8090 still works.
+ * A small TCP front-end owns the port. It hands each connection to an HTTP
+ * server (and with HTTPS on, an HTTPS server) that belongs to the listener,
+ * not to an app, and never listens itself. Each request goes to whichever
+ * app is current when it arrives. swap() makes a new app current and then
+ * closes the old one, so a rebuild never refuses a connection or closes a
+ * keep-alive one under a client that is about to reuse it.
+ *
+ * With HTTPS on, the front-end peeks at the first byte of each connection: a
+ * TLS ClientHello (0x16) goes to the HTTPS server. Plain HTTP from this
+ * computer is served as is, so http://localhost:8090 opens with no
+ * certificate warning. Plain HTTP from anywhere else gets a redirect to the
+ * https:// URL, so typing http://192.168.1.20:8090 still works.
  */
 
 const TLS_HANDSHAKE = 0x16;
 
-/** How long open requests get to finish when the server closes. */
+/** How long open requests get to finish when the server closes or swaps apps. */
 export const CLOSE_GRACE_MS = 1000;
 
 export interface DualListener {
   close(): Promise<void>;
   address(): net.AddressInfo;
+  /**
+   * Send requests to this app from now on, then close the previous app once
+   * its open requests finish (or after CLOSE_GRACE_MS). The port and its
+   * connections stay open. onSwitched runs at the moment requests start
+   * going to the new app.
+   */
+  swap(app: FastifyInstance, onSwitched?: () => void): Promise<void>;
+}
+
+interface FrontOptions {
+  host: string;
+  port: number;
+  /** The HTTPS key pair. Without it the listener serves plain HTTP only. */
+  tls?: { key: string; cert: string };
+  allowClient?: (ip: string | undefined) => boolean;
+  /** Who gets plain HTTP. Decided from the TCP peer address, never a header. */
+  isLocalClient?: (ip: string | undefined) => boolean;
 }
 
 export async function listenHttpsWithRedirect(
@@ -29,26 +54,55 @@ export async function listenHttpsWithRedirect(
   opts: {
     host: string;
     port: number;
+    tls: { key: string; cert: string };
     allowClient: (ip: string | undefined) => boolean;
     /** Who gets plain HTTP. Decided from the TCP peer address, never a header. */
     isLocalClient?: (ip: string | undefined) => boolean;
   },
 ): Promise<DualListener> {
-  await app.ready();
-  const https = app.server;
-  const isLocalClient = opts.isLocalClient ?? isLoopback;
-  // Plain HTTP for this computer. Like the HTTPS server it never listens;
-  // the front-end hands it connections. The live WebSocket's upgrade
-  // handler is on app.server, so pass upgrades on to it.
-  const plain = http.createServer(app.routing);
-  plain.on('upgrade', (req, socket, head) => https.emit('upgrade', req, socket, head));
+  return listenFront(app, opts);
+}
 
+/** Plain HTTP, with the same close and swap behaviour as the HTTPS listener. */
+export async function listenHttp(
+  app: FastifyInstance,
+  opts: { host: string; port: number },
+): Promise<DualListener> {
+  return listenFront(app, opts);
+}
+
+async function listenFront(app: FastifyInstance, opts: FrontOptions): Promise<DualListener> {
+  await app.ready();
+  let current = app;
+  const allowClient = opts.allowClient ?? (() => true);
+  const isLocalClient = opts.isLocalClient ?? isLoopback;
   let boundPort = opts.port;
-  const sockets = trackSockets();
+
+  /** Open requests per app, so a swap can let the old app's finish. */
+  const open = new Map<FastifyInstance, number>();
+  const finished = new Map<FastifyInstance, () => void>();
+  const dispatch = (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const target = current;
+    open.set(target, (open.get(target) ?? 0) + 1);
+    res.once('close', () => {
+      const left = (open.get(target) ?? 1) - 1;
+      if (left > 0) {
+        open.set(target, left);
+        return;
+      }
+      open.delete(target);
+      finished.get(target)?.();
+    });
+    target.routing(req, res);
+  };
+
   // Neither server listens itself, so Node doesn't track their connections
-  // and closeIdleConnections() does nothing. Track them here.
+  // and closeIdleConnections() does nothing. Track them here. A TLS socket
+  // counts once its handshake is done.
+  const sockets = trackSockets();
   const handed = new Set<net.Socket>();
   const busy = new Set<net.Socket>();
+  let closing = false;
   const trackConnection = (socket: net.Socket) => {
     handed.add(socket);
     socket.once('close', () => {
@@ -56,24 +110,42 @@ export async function listenHttpsWithRedirect(
       busy.delete(socket);
     });
   };
-  https.on('secureConnection', trackConnection);
-  for (const server of [https, plain]) {
-    server.on(
-      'request',
-      (req: { socket: net.Socket }, res: { once(e: 'close', f: () => void): void }) => {
-        busy.add(req.socket);
-        res.once('close', () => busy.delete(req.socket));
-      },
+  const servers: (http.Server | https.Server)[] = [];
+  const plain = http.createServer(dispatch);
+  servers.push(plain);
+  let secure: https.Server | undefined;
+  if (opts.tls) {
+    secure = https.createServer(
+      { key: opts.tls.key, cert: opts.tls.cert, minVersion: 'TLSv1.2' },
+      dispatch,
     );
-    // Upgraded sockets belong to the WebSocket server, which closes them.
-    server.on('upgrade', (req: { socket: net.Socket }) => busy.add(req.socket));
+    secure.on('secureConnection', trackConnection);
+    servers.push(secure);
+  }
+  for (const server of servers) {
+    server.on('request', (req: http.IncomingMessage, res: http.ServerResponse) => {
+      busy.add(req.socket);
+      res.once('close', () => {
+        busy.delete(req.socket);
+        // Once closing, a keep-alive connection ends with its last reply.
+        if (closing) req.socket.destroy();
+      });
+    });
+    server.on('upgrade', upgrade);
   }
   const closeIdle = () => {
     for (const socket of handed) if (!busy.has(socket)) socket.destroy();
   };
+  // The live WebSocket's upgrade handler is on app.server. Upgraded sockets
+  // belong to that app's WebSocket server, which closes them with the app.
+  function upgrade(req: http.IncomingMessage, socket: net.Socket, head: Buffer) {
+    busy.add(socket);
+    current.server.emit('upgrade', req, socket, head);
+  }
+
   const front = net.createServer({ pauseOnConnect: true }, (socket) => {
     sockets.add(socket);
-    if (!opts.allowClient(socket.remoteAddress)) {
+    if (closing || !allowClient(socket.remoteAddress)) {
       socket.destroy();
       return;
     }
@@ -90,9 +162,9 @@ export async function listenHttpsWithRedirect(
       }
       socket.setTimeout(0);
       socket.unshift(first);
-      if (first[0] === TLS_HANDSHAKE) {
-        https.emit('connection', socket);
-      } else if (isLocalClient(socket.remoteAddress)) {
+      if (secure && first[0] === TLS_HANDSHAKE) {
+        secure.emit('connection', socket);
+      } else if (!secure || isLocalClient(socket.remoteAddress)) {
         trackConnection(socket);
         plain.emit('connection', socket);
       } else {
@@ -110,37 +182,44 @@ export async function listenHttpsWithRedirect(
     });
   });
 
+  /** Resolves once the app has no open requests, or after CLOSE_GRACE_MS. */
+  const settled = (target: FastifyInstance) =>
+    new Promise<void>((resolve) => {
+      if (!open.get(target)) {
+        resolve();
+        return;
+      }
+      const timer = setTimeout(done, CLOSE_GRACE_MS);
+      function done() {
+        clearTimeout(timer);
+        finished.delete(target);
+        resolve();
+      }
+      finished.set(target, done);
+    });
+
   return {
     address: () => front.address() as net.AddressInfo,
-    // front.close() waits for every socket it accepted, including the ones
-    // handed to the HTTPS server, so close those too rather than wait.
+    swap: async (next, onSwitched) => {
+      if (closing) throw new Error('The listener is closed');
+      // Get the new app fully ready first, so the switch itself is instant.
+      await next.ready();
+      const previous = current;
+      current = next;
+      onSwitched?.();
+      await settled(previous);
+      // Closes the old app's WebSockets. Its connections stay with the listener.
+      await previous.close();
+    },
     close: () =>
       closeGracefully(
-        app,
+        current,
         sockets,
         () => new Promise<void>((r) => front.close(() => r())),
-        closeIdle,
-      ),
-  };
-}
-
-/** Plain HTTP, with the same close behaviour as the HTTPS listener. */
-export async function listenHttp(
-  app: FastifyInstance,
-  opts: { host: string; port: number },
-): Promise<DualListener> {
-  await app.listen({ host: opts.host, port: opts.port });
-  // No connection is handled before the listen callback, so none are missed.
-  const sockets = trackSockets();
-  app.server.on('connection', (socket: net.Socket) => sockets.add(socket));
-  return {
-    address: () => app.server.address() as net.AddressInfo,
-    close: () =>
-      closeGracefully(
-        app,
-        sockets,
-        async () => undefined,
-        () => app.server.closeIdleConnections(),
+        () => {
+          closing = true;
+          closeIdle();
+        },
       ),
   };
 }

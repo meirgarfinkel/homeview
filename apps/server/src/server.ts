@@ -7,7 +7,7 @@ import { Camera, locateCamera } from './kasa/camera.js';
 import { CameraWatcher } from './kasa/cameraWatcher.js';
 import type { DiscoveredDevice } from './kasa/discovery.js';
 import { syncTimeZone } from './kasa/timeZone.js';
-import { listenHttp, listenHttpsWithRedirect } from './listen.js';
+import { listenHttp, listenHttpsWithRedirect, type DualListener } from './listen.js';
 import { createLogger, type Logger } from './logger.js';
 import { LiveHub } from './media/liveHub.js';
 import { loadOrCreateSecret } from './security/dataDir.js';
@@ -82,7 +82,7 @@ export function lanAddress(
 
 type Located = { host: string; device?: DiscoveredDevice };
 
-/** One build of the app: its camera, listener and timers. A reload replaces it. */
+/** One build of the app: its camera and timers. A reload replaces it. */
 interface Instance {
   config: Config;
   camera: Camera | undefined;
@@ -91,7 +91,6 @@ interface Instance {
   timers: NodeJS.Timeout[];
   secure: boolean;
   port: number;
-  close(): Promise<void>;
 }
 
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
@@ -156,9 +155,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   };
 
   /**
-   * Build a new instance, then swap it in on the same port. onPrepared runs
-   * once the new settings are loaded and the new app is built. The swap
-   * waits a turn after it so a route handler can send its reply first.
+   * Build a new instance, then swap it in behind the listener. onPrepared
+   * runs once the new settings are loaded and the new app is ready. The swap
+   * waits a turn after it so a route handler can send its reply first. The
+   * port and its connections stay open: requests go to the new app at once,
+   * and the old one closes once its open requests finish.
    */
   const replace = async (located?: Located, onPrepared?: () => void): Promise<void> => {
     const next = await prepare(readConfig(), located);
@@ -166,9 +167,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       onPrepared();
       await new Promise((r) => setImmediate(r));
     }
-    if (current) await disposeInstance(current);
-    current = undefined;
-    current = await next.listen([boundPort]);
+    const previous = current;
+    await next.swapInto(listener);
+    if (previous) await disposeInstance(previous);
+    next.started();
   };
 
   /** Everything up to listening, so a reload can fail without taking the old server down. */
@@ -225,27 +227,54 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       ...(opts.onboardingOverrides ? { onboardingOverrides: opts.onboardingOverrides } : {}),
     });
 
-    const listen = async (ports: number[]): Promise<Instance> => {
-      const { port, close } = await listenOnFirstFree(app, config, ports, tls !== undefined);
-      const instance: Instance = {
-        config,
-        camera,
-        hub,
-        watcher: undefined,
-        timers: [],
-        secure: tls !== undefined,
-        port,
-        close,
-      };
-      current = instance;
+    // Plugins load here, so a broken build fails the reload, not the swap.
+    try {
+      await app.ready();
+    } catch (err) {
+      hub?.close();
+      await camera?.ptz.dispose();
+      await app.close().catch(() => undefined);
+      throw err;
+    }
+
+    const instance = (port: number): Instance => ({
+      config,
+      camera,
+      hub,
+      watcher: undefined,
+      timers: [],
+      secure: tls !== undefined,
+      port,
+    });
+    const running = (port: number) => {
       logger.info(
         { ...(camera ? { camera: camera.host } : {}), url: lanUrl() ?? localUrlFor(port) },
         'Kasa Home is running',
       );
-      if (camera) startCameraTasks(instance, camera, device);
-      return instance;
     };
-    return { listen };
+    let next: Instance | undefined;
+    return {
+      /** The first start: bind the first free port. */
+      listen: async (ports: number[]): Promise<{ listener: DualListener; port: number }> => {
+        const bound = await listenOnFirstFree(app, config, ports, tls);
+        const port = bound.address().port;
+        current = next = instance(port);
+        running(port);
+        if (camera) startCameraTasks(next, camera, device);
+        return { listener: bound, port };
+      },
+      /** A reload: take over the listener's requests from the current app. */
+      swapInto: async (into: DualListener): Promise<void> => {
+        await into.swap(app, () => {
+          current = next = instance(boundPort);
+        });
+      },
+      /** After the old instance is gone: log and start the camera tasks. */
+      started: () => {
+        running(boundPort);
+        if (camera && next) startCameraTasks(next, camera, device);
+      },
+    };
   };
 
   const startCameraTasks = (instance: Instance, camera: Camera, device?: DiscoveredDevice) => {
@@ -306,7 +335,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     start === 0
       ? [0]
       : Array.from({ length: PORT_ATTEMPTS }, (_, i) => start + i).filter((p) => p <= 65535);
-  boundPort = (await first.listen(ports)).port;
+  const bound = await first.listen(ports);
+  /** Bound once, here. Reloads swap the app behind it. */
+  const listener = bound.listener;
+  boundPort = bound.port;
 
   const running: RunningServer = {
     port: boundPort,
@@ -328,6 +360,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         logger.info('Shutting down');
         clearTimeout(retry);
         await onboarding.job?.cancel().catch(() => undefined);
+        await listener.close();
         if (current) await disposeInstance(current);
         current = undefined;
       }),
@@ -339,12 +372,12 @@ function localUrlFor(port: number): string {
   return `http://localhost:${port}`;
 }
 
+/** Stop an instance's camera work. Its app is closed by the listener. */
 async function disposeInstance(instance: Instance): Promise<void> {
   for (const timer of instance.timers) clearInterval(timer);
   instance.watcher?.stop();
   await instance.camera?.ptz.dispose();
   instance.hub?.close();
-  await instance.close();
 }
 
 async function loadTls(
@@ -370,25 +403,28 @@ async function loadTls(
   return { key: material.key, cert: material.cert };
 }
 
-/** Listen on the first port in the list that is free. */
+/**
+ * Listen on the first port in the list that is free. The listener keeps the
+ * HTTPS key pair it starts with. Reloads can't change it: it comes from the
+ * environment and the data folder, which stay the same while the server runs.
+ */
 async function listenOnFirstFree(
   app: FastifyInstance,
   config: Config,
   ports: number[],
-  secure: boolean,
-): Promise<{ port: number; close(): Promise<void> }> {
+  tls: { key: string; cert: string } | undefined,
+): Promise<DualListener> {
   for (const port of ports) {
     try {
-      if (secure) {
-        const listener = await listenHttpsWithRedirect(app, {
+      if (tls) {
+        return await listenHttpsWithRedirect(app, {
           host: config.host,
           port,
+          tls,
           allowClient: createIpAllowlist(clientAllowlist(config)),
         });
-        return { port: listener.address().port, close: listener.close };
       }
-      const listener = await listenHttp(app, { host: config.host, port });
-      return { port: listener.address().port, close: listener.close };
+      return await listenHttp(app, { host: config.host, port });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
       app.log.warn({ port }, 'Port in use; trying the next one');

@@ -15,6 +15,7 @@ import { lanAddress, startServer, type RunningServer } from '../src/server.js';
 import type * as ApiModule from '../src/routes/api.js';
 import { SettingsStore } from '../src/settings/store.js';
 import { fixture, silentLogger, waitFor } from './helpers.js';
+import { TEST_PAGE_MARKER } from './setup/staticDir.js';
 
 // Test only: add a route that awaits deps.reload(), as the setup routes will.
 vi.mock('../src/routes/api.js', async (importOriginal) => {
@@ -246,6 +247,108 @@ describe('rebuilding while clients are connected', () => {
     await waitFor(() => s.setupComplete());
     expect((await fetch(`${s.localUrl}/api/camera`)).status).toBe(200);
     await within(s.stop(), 5000, 'stop()');
+  });
+
+  /**
+   * Request /api/health over new connections, a few at a time, until stopped.
+   * Collects anything that is not a 200: a refused or reset connection too.
+   */
+  function keepRequesting(port: number, secure: boolean, keepAlive: boolean) {
+    const agent = keepAlive
+      ? new (secure ? https : http).Agent({ keepAlive: true, rejectUnauthorized: false })
+      : false;
+    let running = true;
+    let ok = 0;
+    const failures: string[] = [];
+    const one = () =>
+      new Promise<void>((resolve) => {
+        const options = { host: '127.0.0.1', port, path: '/api/health', agent };
+        const done = (res: http.IncomingMessage) => {
+          res.resume();
+          res.on('end', () => {
+            if (res.statusCode === 200) ok++;
+            else failures.push(`status ${res.statusCode}`);
+            resolve();
+          });
+        };
+        const req = secure
+          ? https.get({ ...options, rejectUnauthorized: false }, done)
+          : http.get(options, done);
+        req.on('error', (err: NodeJS.ErrnoException) => {
+          failures.push(err.code ?? err.message);
+          resolve();
+        });
+      });
+    const loops = Array.from({ length: 4 }, async () => {
+      while (running) await one();
+    });
+    return {
+      stop: async () => {
+        running = false;
+        await Promise.all(loops);
+        if (agent) agent.destroy();
+        return { ok, failures };
+      },
+    };
+  }
+
+  for (const secure of [false, true]) {
+    for (const keepAlive of [false, true]) {
+      const name = `${secure ? 'HTTPS' : 'HTTP'}, ${keepAlive ? 'keep-alive' : 'new connections'}`;
+      it(`answers every request while it rebuilds (${name})`, async () => {
+        const s = await start({ ...quiet, HTTPS: String(secure), ALLOW_NO_PASSWORD: 'true' });
+        try {
+          const requests = keepRequesting(s.port, secure, keepAlive);
+          for (let i = 0; i < 3; i++) await within(s.reload(), 5000, 'reload()');
+          const { ok, failures } = await requests.stop();
+          expect(failures).toEqual([]);
+          expect(ok).toBeGreaterThan(0);
+        } finally {
+          await within(s.stop(), 5000, 'stop()');
+        }
+      });
+    }
+  }
+
+  it('sends a request on a kept-alive connection to the rebuilt app', async () => {
+    const settings = new SettingsStore(tmp());
+    const s = await start({ ...quiet, ...fakeEnv, ALLOW_NO_PASSWORD: 'true' }, settings);
+    const agent = new http.Agent({ keepAlive: true });
+    const session = () =>
+      new Promise<{ setupComplete: boolean; reused: boolean }>((resolve, reject) => {
+        const req = http.get(`http://127.0.0.1:${s.port}/api/session`, { agent }, (res) => {
+          let body = '';
+          res.on('data', (c: Buffer) => (body += c.toString()));
+          res.on('end', () =>
+            resolve({
+              ...(JSON.parse(body) as { setupComplete: boolean }),
+              reused: req.reusedSocket,
+            }),
+          );
+        });
+        req.on('error', reject);
+      });
+    try {
+      expect(await session()).toMatchObject({ setupComplete: false, reused: false });
+      settings.save({ camera: { username: USER, password: PASS, localOnly: false } });
+      await within(s.reload(), 5000, 'reload()');
+      expect(await session()).toMatchObject({ setupComplete: true, reused: true });
+    } finally {
+      agent.destroy();
+      await within(s.stop(), 5000, 'stop()');
+    }
+  });
+
+  it('serves the web app in these tests, so reloads are tested with static files', async () => {
+    const s = await start({ ...quiet, ALLOW_NO_PASSWORD: 'true' });
+    try {
+      expect(await fetch(`${s.localUrl}/`).then((r) => r.text())).toContain(TEST_PAGE_MARKER);
+      const asset = await fetch(`${s.localUrl}/assets/app.js`);
+      expect(asset.status).toBe(200);
+      expect(asset.headers.get('cache-control')).toContain('immutable');
+    } finally {
+      await s.stop();
+    }
   });
 
   describe('with HTTPS on', () => {
