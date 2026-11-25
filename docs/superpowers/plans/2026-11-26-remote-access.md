@@ -4,7 +4,7 @@
 
 **Goal:** Watch the camera from anywhere in a phone browser, through an embedded Tailscale Funnel helper, with pairing that keeps strangers out.
 
-**Architecture:** A Go helper (`kasa-tunnel`, built on `tsnet`) publishes `https://<name>.ts.net` and reverse-proxies to a second, loopback-only plain-HTTP listener in the server. Everything arriving on that listener is marked *remote* by the listener itself and goes through its own gate: tunnel secret, Host check, paired-device cookie, then the normal session. The desktop app supplies the helper's path and opens browser links. The server's `RemoteAccess` object owns the helper, the device list and pairing codes, and survives reloads.
+**Architecture:** A Go helper (`kasa-tunnel`, built on `tsnet`) publishes `https://<name>.ts.net` and reverse-proxies to a second, loopback-only plain-HTTP listener in the server. Everything arriving on that listener is marked _remote_ by the listener itself and goes through its own gate: tunnel secret, Host check, paired-device cookie, then the normal session. The desktop app supplies the helper's path and opens browser links. The server's `RemoteAccess` object owns the helper, the device list and pairing codes, and survives reloads.
 
 **Tech Stack:** TypeScript 6, Node 24, Fastify 5, React 19 + Vite, vitest, Electron 45, electron-builder 26, Go (version from Tailscale's `go.mod`), `tailscale.com/tsnet`.
 
@@ -41,10 +41,12 @@
 ### Task 1: The `kasa-tunnel` helper
 
 **Files:**
+
 - Create: `apps/tunnel/go.mod`, `apps/tunnel/main.go`, `apps/tunnel/proxy.go`, `apps/tunnel/proxy_test.go`, `apps/tunnel/events.go`, `apps/tunnel/build.mjs`, `apps/tunnel/package.json`, `apps/tunnel/.gitignore` (`bin/`)
 - Modify: `mise.toml` (add `go`, the version Tailscale's `go.mod` needs), `.github/workflows/build.yml` (check job: `actions/setup-go@v5` with `go-version-file: apps/tunnel/go.mod`, `cache-dependency-path: apps/tunnel/go.sum`)
 
 **Interfaces:**
+
 - Produces: binary `kasa-tunnel` with flags `--state-dir <dir>`, `--target <host:port>`, `--hostname <name>` (default `kasa-home`), `--version` (prints `kasa-tunnel <version>` and exits 0). Reads `KASA_TUNNEL_SECRET` (exit 2 with a stderr message if empty).
 - Produces: stdout JSON lines, exactly these shapes: `{"type":"login","url":"..."}`, `{"type":"enable","url":"..."}`, `{"type":"ready","url":"https://<name>"}` (no trailing dot), `{"type":"error","message":"..."}`. Human logs go to stderr only.
 - Produces: `pnpm --filter @kasa/tunnel build` writes `apps/tunnel/bin/linux/kasa-tunnel`, `bin/win/kasa-tunnel.exe` or `bin/mac/kasa-tunnel`, for the host OS only. `pnpm --filter @kasa/tunnel test` runs `go test ./...`.
@@ -74,43 +76,54 @@
 ### Task 2: Shared types, device store, pairing codes
 
 **Files:**
+
 - Modify: `packages/shared/src/index.ts`
 - Create: `apps/server/src/remote/devices.ts`, `apps/server/src/remote/pairing.ts`, `apps/server/src/remote/deviceName.ts`
 - Test: `apps/server/test/remoteDevices.test.ts`, `apps/server/test/pairing.test.ts`
 
 **Interfaces:**
+
 - Produces (shared):
   ```ts
   export type RemotePhase = 'off' | 'starting' | 'sign-in' | 'approve' | 'on' | 'problem';
-  export interface RemoteDevice { id: string; name: string; createdAt: string; lastSeenAt?: string }
+  export interface RemoteDevice {
+    id: string;
+    name: string;
+    createdAt: string;
+    lastSeenAt?: string;
+  }
   export interface RemoteStatus {
     available: boolean; // the helper is installed (desktop app)
     enabled: boolean;
     phase: RemotePhase;
-    url?: string;      // when phase is 'on'
-    message?: string;  // when phase is 'problem'
+    url?: string; // when phase is 'on'
+    message?: string; // when phase is 'problem'
     devices: RemoteDevice[];
   }
-  export interface PairCodeResponse { url: string; expiresAt: string }
+  export interface PairCodeResponse {
+    url: string;
+    expiresAt: string;
+  }
   ```
   `SessionResponse` gains `remote: boolean` (this request came through the tunnel) and `remoteOn: boolean` (remote access is on, phase `on`).
 - Produces (server):
+
   ```ts
   export const DEVICE_COOKIE = 'kasa_device';
   export function deviceCookie(token: string): string;
   export class DeviceStore extends EventEmitter<{ removed: [string] }> {
     constructor(dir: string, logger?: Logger);
     readonly enabled: boolean;
-    setEnabled(on: boolean): void;            // writes remote.json now
+    setEnabled(on: boolean): void; // writes remote.json now
     list(): RemoteDevice[];
     add(name: string, now?: Date): { device: RemoteDevice; token: string }; // writes now
     find(token: string | undefined): RemoteDevice | undefined; // compares SHA-256 hashes
-    touch(id: string, now?: Date): void;      // memory; flushes if 10 min since last write
-    remove(id: string): boolean;              // writes now, emits 'removed'
+    touch(id: string, now?: Date): void; // memory; flushes if 10 min since last write
+    remove(id: string): boolean; // writes now, emits 'removed'
     flush(): void;
   }
   export class PairingCodes {
-    constructor(ttlMs?: number);              // default 10 * 60_000
+    constructor(ttlMs?: number); // default 10 * 60_000
     create(now?: number): { code: string; expiresAt: Date };
     consume(code: string, now?: number): boolean; // true once, then false
   }
@@ -129,13 +142,16 @@
 ### Task 3: Remote listener and the remote gate
 
 **Files:**
+
 - Create: `apps/server/src/security/remoteRequest.ts`, `apps/server/src/routes/remotePair.ts`
 - Modify: `apps/server/src/listen.ts` (`FrontOptions.remote`), `apps/server/src/app.ts`, `apps/server/src/routes/api.ts`, `apps/server/src/routes/settings.ts`, `apps/server/src/routes/setup.ts`, `apps/server/src/routes/live.ts`
 - Test: `apps/server/test/remoteGate.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2's `DeviceStore`, `PairingCodes`, `deviceName`, `DEVICE_COOKIE`, `deviceCookie`.
 - Produces:
+
   ```ts
   // security/remoteRequest.ts
   export function markRemote(raw: http.IncomingMessage): void;
@@ -153,6 +169,7 @@
   }
   AppDeps.remote?: RemoteGateDeps
   ```
+
   Each authorised remote request gets `req.remoteDeviceId` (a Fastify request decorator).
 
 - [ ] **Step 1: Write failing tests** in `remoteGate.test.ts`. Use a real `listenHttp(..., { remote: true })` on port 0 and `fetch`/`ws`, with a test `RemoteGateDeps` (secret `s3cret`, host `kasa-home.example.ts.net`) and a viewer password set:
@@ -184,6 +201,7 @@
     9. session, except for `/api/session`, `/api/login` and `/api/logout`.
 
     Remote requests skip the IP allowlist and every loopback branch.
+
   - Replace every `isLoopback(req.ip)` in `app.ts` and `routes/*` with `isLocalRequest(req)`.
   - The login limiter and login logs use `clientIp(req)`.
   - `remotePair.ts`: registered only when `deps.remote` is set. It answers 404 unless `isRemote(req)`. It applies the two limiters (`LoginRateLimiter(10, 15m)` per `clientIp`, `LoginRateLimiter(30, 15m)` keyed `'all'`), consumes the code, adds a device named `deviceName(user-agent)`, sets both cookies, and logs `{device, ip}`.
@@ -194,40 +212,59 @@
 ### Task 4: Tunnel manager, remote access service, control routes, server wiring
 
 **Files:**
+
 - Create: `apps/server/src/remote/tunnel.ts`, `apps/server/src/remote/remoteAccess.ts`, `apps/server/src/routes/remote.ts`, `apps/server/test/fixtures/fakeTunnel.mjs`
 - Modify: `apps/server/src/server.ts`, `apps/server/src/app.ts` (`ServerHooks.openExternal?(url: string): void`, `AppDeps.remote` becomes a `RemoteAccess`), `apps/server/src/routes/api.ts` (`remoteOn`)
 - Test: `apps/server/test/tunnel.test.ts`, `apps/server/test/remoteRoutes.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1's event lines, flags and env; Tasks 2 and 3.
 - Produces:
   ```ts
   export type TunnelEvent =
-    | { type: 'login'; url: string } | { type: 'enable'; url: string }
-    | { type: 'ready'; url: string } | { type: 'error'; message: string };
+    | { type: 'login'; url: string }
+    | { type: 'enable'; url: string }
+    | { type: 'ready'; url: string }
+    | { type: 'error'; message: string };
   export interface TunnelOptions {
-    command: string; args?: string[];  // args before the flags; the fake uses ['fakeTunnel.mjs']
-    stateDir: string; targetPort: number; logger: Logger;
-    backoffMs?: number[];              // default [1000, 5000, 30000]
+    command: string;
+    args?: string[]; // args before the flags; the fake uses ['fakeTunnel.mjs']
+    stateDir: string;
+    targetPort: number;
+    logger: Logger;
+    backoffMs?: number[]; // default [1000, 5000, 30000]
   }
   export class TunnelManager extends EventEmitter<{ change: [] }> {
-    readonly secret: string;           // 32 random bytes, hex, new per start()
-    phase(): RemotePhase; url(): string | undefined; host(): string | undefined;
-    message(): string | undefined; link(): string | undefined; // the current login or enable URL
-    start(): void; stop(): Promise<void>; signOut(): Promise<void>; // signOut: stop, then rm -rf stateDir
+    readonly secret: string; // 32 random bytes, hex, new per start()
+    phase(): RemotePhase;
+    url(): string | undefined;
+    host(): string | undefined;
+    message(): string | undefined;
+    link(): string | undefined; // the current login or enable URL
+    start(): void;
+    stop(): Promise<void>;
+    signOut(): Promise<void>; // signOut: stop, then rm -rf stateDir
   }
   export class RemoteAccess implements RemoteGateDeps {
-    constructor(opts: { dataDir: string; tunnel?: Omit<TunnelOptions, 'stateDir' | 'targetPort'>;
-                        logger: Logger; openExternal?: (url: string) => void });
-    readonly devices: DeviceStore; readonly pairing: PairingCodes;
-    readonly available: boolean;       // tunnel options given
-    attach(targetPort: number): void;  // after the remote listener is bound
+    constructor(opts: {
+      dataDir: string;
+      tunnel?: Omit<TunnelOptions, 'stateDir' | 'targetPort'>;
+      logger: Logger;
+      openExternal?: (url: string) => void;
+    });
+    readonly devices: DeviceStore;
+    readonly pairing: PairingCodes;
+    readonly available: boolean; // tunnel options given
+    attach(targetPort: number): void; // after the remote listener is bound
     status(): RemoteStatus;
     setEnabled(on: boolean): Promise<void>;
-    openLink(): boolean;               // false unless link() starts with https://login.tailscale.com/
+    openLink(): boolean; // false unless link() starts with https://login.tailscale.com/
     pairUrl(code: string): string | undefined; // `${url}/pair#${code}` when phase is 'on'
-    signOut(): Promise<void>; stop(): Promise<void>; // stop also flushes devices
-    secret(): string | undefined; host(): string | undefined;
+    signOut(): Promise<void>;
+    stop(): Promise<void>; // stop also flushes devices
+    secret(): string | undefined;
+    host(): string | undefined;
   }
   ```
 - Phases: `start` gives `starting`; `login` gives `sign-in`; `enable` gives `approve`; `ready` gives `on`. A child exit while enabled restarts with backoff. After the last backoff fails it gives `problem`, with the last `error` message or "The connection helper stopped." `stop` gives `off`.
@@ -266,10 +303,12 @@
 ### Task 5: Desktop app, packaging and CI
 
 **Files:**
+
 - Modify: `apps/desktop/src/main.ts`, `apps/desktop/src/selfTest.ts`, `apps/desktop/electron-builder.yml`, `apps/desktop/package.json`, `.github/workflows/build.yml`
 - Test: `apps/desktop/test/` (a unit test for the helper path function)
 
 **Interfaces:**
+
 - Consumes: Task 1's binary layout; Task 4's `StartServerOptions.tunnel` and `openExternal`.
 - Produces: `export function tunnelBinary(opts: { packaged: boolean; resourcesPath: string; appRoot: string; platform: NodeJS.Platform }): string | undefined`.
   - Packaged: `<resourcesPath>/tunnel/kasa-tunnel[.exe]`.
@@ -290,30 +329,32 @@
 ### Task 6: Web pages
 
 **Files:**
+
 - Create: `apps/web/src/components/AwayFromHome.tsx`, `apps/web/src/components/Pair.tsx`, `apps/web/src/components/NotPaired.tsx`, with tests next to each (`*.test.tsx`)
 - Modify: `apps/web/src/App.tsx`, `apps/web/src/components/Settings.tsx`, `apps/web/src/lib/api.ts`, `apps/web/src/styles/app.css`
 
 **Interfaces:**
+
 - Consumes: Task 2's types; Task 4's routes; `qrSvg(text)` from `lib/qr.ts`.
 
 Copy, exactly:
 
-| Where | Text |
-| --- | --- |
-| Section title | `Away from home` |
-| Off | `Watch from anywhere with your phone's browser.` |
-| Starting | `Connecting...` |
-| Sign-in | `Sign in once to the free Tailscale service that carries the encrypted video.`, button `Sign in` |
-| Approve | `One more click: allow Kasa Home to share a web address.`, button `Approve` |
-| On | the URL, button `Add a phone`, then the device list `<name>, added <date>, used <relative>`, each with `Remove` |
-| Add a phone (QR panel) | `Scan this with the phone's camera. The code works once, for 10 minutes.` |
-| Problem | the message, button `Try again` (turns off and on again) |
-| Footer link | `Sign out of Tailscale` |
-| Phone button | `Use this phone away from home` |
-| Pair page, working | `Setting up this phone...` |
-| Pair page, failed | `This code didn't work. It may have been used or expired. Make a new one in Kasa Home on your computer.` |
-| Pair page, done | the camera, plus a one-time hint `Tip: add this page to your home screen.` |
-| Not paired | `This phone isn't set up to watch from away. At home, scan the code in Kasa Home on your computer.` |
+| Where                  | Text                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Section title          | `Away from home`                                                                                                |
+| Off                    | `Watch from anywhere with your phone's browser.`                                                                |
+| Starting               | `Connecting...`                                                                                                 |
+| Sign-in                | `Sign in once to the free Tailscale service that carries the encrypted video.`, button `Sign in`                |
+| Approve                | `One more click: allow Kasa Home to share a web address.`, button `Approve`                                     |
+| On                     | the URL, button `Add a phone`, then the device list `<name>, added <date>, used <relative>`, each with `Remove` |
+| Add a phone (QR panel) | `Scan this with the phone's camera. The code works once, for 10 minutes.`                                       |
+| Problem                | the message, button `Try again` (turns off and on again)                                                        |
+| Footer link            | `Sign out of Tailscale`                                                                                         |
+| Phone button           | `Use this phone away from home`                                                                                 |
+| Pair page, working     | `Setting up this phone...`                                                                                      |
+| Pair page, failed      | `This code didn't work. It may have been used or expired. Make a new one in Kasa Home on your computer.`        |
+| Pair page, done        | the camera, plus a one-time hint `Tip: add this page to your home screen.`                                      |
+| Not paired             | `This phone isn't set up to watch from away. At home, scan the code in Kasa Home on your computer.`             |
 
 - [ ] **Step 1: Write failing tests:**
   - **`AwayFromHome`:**

@@ -77,14 +77,15 @@ list.
   - `{"type":"error","message":...}`.
 
   Once signed in and approved, it calls `ListenFunnel("tcp", ":443",
-  FunnelOnly())` and runs a Go reverse proxy to the target. Each proxied
+FunnelOnly())` and runs a Go reverse proxy to the target. Each proxied
   request gets the header `X-Kasa-Tunnel: <secret>` and the real client
   address in `X-Forwarded-For` (its own value replaces whatever the client
   sent). WebSockets pass through. FunnelOnly means other devices on the
   user's tailnet cannot use it either; only the public address works.
+
 - **Remote listener in the server.** A second plain-HTTP listener on
   `127.0.0.1` with a random port, feeding the same app. Every request on it
-  is a *remote* request. It is never treated as loopback, whatever its
+  is a _remote_ request. It is never treated as loopback, whatever its
   socket address says. A request without the right `X-Kasa-Tunnel` secret
   gets 403. The Host header must be the `ts.net` name. The client address
   for rate limits comes from `X-Forwarded-For`, trusted only on this
@@ -99,14 +100,14 @@ list.
 
 On the remote listener:
 
-| Path | Rule |
-| --- | --- |
-| `/api/health` | open |
-| `/api/remote/pair` | open, rate-limited |
-| `/api/session`, `/api/login`, `/api/logout` | paired phone needed |
-| camera, status, live, ptz routes | paired phone and signed-in session |
-| `/api/setup/*`, `/api/settings*`, `/api/app/*`, `/api/remote/*` (except pair) | always 403 |
-| static page files | open (no secrets in them) |
+| Path                                                                          | Rule                               |
+| ----------------------------------------------------------------------------- | ---------------------------------- |
+| `/api/health`                                                                 | open                               |
+| `/api/remote/pair`                                                            | open, rate-limited                 |
+| `/api/session`, `/api/login`, `/api/logout`                                   | paired phone needed                |
+| camera, status, live, ptz routes                                              | paired phone and signed-in session |
+| `/api/setup/*`, `/api/settings*`, `/api/app/*`, `/api/remote/*` (except pair) | always 403                         |
+| static page files                                                             | open (no secrets in them)          |
 
 "Paired phone" means a valid `kasa_device` cookie whose token hash is in the
 device list. The usual session rules then apply on top. The same-origin
