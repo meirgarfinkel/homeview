@@ -63,6 +63,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
     const local = isLocalRequest(req);
     // Only this computer gets the phone address. req.ip is the socket peer (trustProxy is off).
     const lanUrl = local ? deps.lanUrl?.() : undefined;
+    const remoteOn = deps.remote?.status().phase === 'on';
     return {
       authRequired: !deps.openAccess,
       authenticated: deps.isAuthenticated(req),
@@ -70,6 +71,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
       local,
       desktop: deps.desktop ?? deps.config.desktop,
       ...(isRemote(req) ? { remote: true } : {}),
+      ...(remoteOn ? { remoteOn: true } : {}),
       ...(lanUrl ? { lanUrl } : {}),
     };
   });

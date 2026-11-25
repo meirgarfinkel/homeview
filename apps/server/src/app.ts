@@ -11,12 +11,14 @@ import type { LiveHub } from './media/liveHub.js';
 import { loggerOptions, type Logger } from './logger.js';
 import { notSetUp, registerApiRoutes } from './routes/api.js';
 import { registerLiveRoute } from './routes/live.js';
+import { registerRemoteRoutes } from './routes/remote.js';
 import { registerRemotePairRoute } from './routes/remotePair.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerSetupRoutes, type OnboardingSlot, type SetupDeps } from './routes/setup.js';
 import type { WifiSwitcher } from './setup/wifiSwitcher.js';
 import { DEVICE_COOKIE, type DeviceStore } from './remote/devices.js';
 import type { PairingCodes } from './remote/pairing.js';
+import type { RemoteAccess } from './remote/remoteAccess.js';
 import {
   createHostAllowlist,
   createIpAllowlist,
@@ -55,6 +57,8 @@ export interface ServerHooks {
   getAutostart?(): boolean;
   setAutostart?(on: boolean): void;
   quit?(): void;
+  /** Opens a link in the system browser. */
+  openExternal?(url: string): void;
 }
 
 export interface AppDeps {
@@ -89,7 +93,7 @@ export interface AppDeps {
   /** Replaces parts of the onboarding job's options. For tests. */
   onboardingOverrides?: SetupDeps['onboardingOverrides'];
   /** Remote access. Without it, requests from the remote listener are refused. */
-  remote?: RemoteGateDeps;
+  remote?: RemoteAccess;
 }
 
 /** Client networks allowed by default: this machine and its real LAN. */
@@ -331,6 +335,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   }
   if (deps.remote) {
     await registerRemotePairRoute(app, { remote: deps.remote, sessions });
+    await registerRemoteRoutes(app, { remote: deps.remote, ready: remoteReady, isAuthenticated });
   }
   if (deps.hub) {
     await registerLiveRoute(app, deps.hub, deps.remote?.devices);

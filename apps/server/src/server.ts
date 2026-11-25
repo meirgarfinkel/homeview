@@ -10,6 +10,7 @@ import { syncTimeZone } from './kasa/timeZone.js';
 import { listenHttp, listenHttpsWithRedirect, type DualListener } from './listen.js';
 import { createLogger, type Logger } from './logger.js';
 import { LiveHub } from './media/liveHub.js';
+import { RemoteAccess } from './remote/remoteAccess.js';
 import { loadOrCreateSecret } from './security/dataDir.js';
 import {
   createIpAllowlist,
@@ -38,6 +39,10 @@ export interface StartServerOptions {
   createSwitcher?: () => Promise<WifiSwitcher>;
   /** Replaces parts of the onboarding job's options. For tests. */
   onboardingOverrides?: SetupDeps['onboardingOverrides'];
+  /** The tunnel helper. Without it, remote access is not available. */
+  tunnel?: { command: string; args?: string[] };
+  /** Opens a link in the system browser. Defaults to hooks.openExternal. */
+  openExternal?: (url: string) => void;
 }
 
 export interface RunningServer {
@@ -105,6 +110,18 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
 
   /** The camera setup job. It lives here so it survives a reload. */
   const onboarding: OnboardingSlot = {};
+  const openExternal = opts.openExternal ?? opts.hooks?.openExternal?.bind(opts.hooks);
+  /** Remote access and its helper. They live here too, so a reload never restarts the helper. */
+  const remote = new RemoteAccess({
+    dataDir: firstConfig.dataDir,
+    ...(opts.tunnel
+      ? { tunnel: { ...opts.tunnel, logger: logger.child({ component: 'tunnel' }) } }
+      : {}),
+    logger,
+    ...(openExternal ? { openExternal } : {}),
+  });
+  /** The listener the tunnel helper talks to. Bound once, like the main one. */
+  let remoteListener: DualListener | undefined;
   let current: Instance | undefined;
   let stopped = false;
   let retry: NodeJS.Timeout | undefined;
@@ -230,6 +247,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       desktop: config.desktop,
       lanUrl,
       onboarding,
+      remote,
       createSwitcher: opts.createSwitcher ?? (() => createWifiSwitcher()),
       ...(opts.onboardingOverrides ? { onboardingOverrides: opts.onboardingOverrides } : {}),
     });
@@ -266,6 +284,15 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       listen: async (ports: number[]): Promise<{ listener: DualListener; port: number }> => {
         const bound = await listenOnFirstFree(app, config, ports, tls);
         const port = bound.address().port;
+        if (remote.available) {
+          try {
+            remoteListener = await listenHttp(app, { host: '127.0.0.1', port: 0, remote: true });
+          } catch (err) {
+            await bound.close();
+            throw err;
+          }
+          remote.attach(remoteListener.address().port);
+        }
         current = next = instance(port);
         running(port);
         if (camera) startCameraTasks(next, camera, device);
@@ -273,13 +300,18 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       },
       /** A reload: take over the listener's requests from the current app. */
       swapInto: async (into: DualListener): Promise<void> => {
-        await into.swap(app, {
-          // The computer may have joined another network since the last build.
-          ...(tls ? { allowClient: createIpAllowlist(allowed) } : {}),
-          onSwitched: () => {
-            current = next = instance(boundPort);
-          },
-        });
+        // Both listeners switch at once. Each closes the old app once its own
+        // requests finish; closing an app twice is safe.
+        await Promise.all([
+          into.swap(app, {
+            // The computer may have joined another network since the last build.
+            ...(tls ? { allowClient: createIpAllowlist(allowed) } : {}),
+            onSwitched: () => {
+              current = next = instance(boundPort);
+            },
+          }),
+          remoteListener?.swap(app),
+        ]);
       },
       /** After the old instance is gone: log and start the camera tasks. */
       started: () => {
@@ -372,7 +404,12 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         logger.info('Shutting down');
         clearTimeout(retry);
         await onboarding.job?.cancel().catch(() => undefined);
-        await listener.close();
+        try {
+          await Promise.all([listener.close(), remoteListener?.close()]);
+        } finally {
+          // The helper doesn't watch this process, so it must always be ended here.
+          await remote.stop();
+        }
         if (current) await disposeInstance(current);
         current = undefined;
       }),

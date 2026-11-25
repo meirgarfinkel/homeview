@@ -7,12 +7,11 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { LIVE_WS_PATH, type StreamState } from '@kasa/shared';
-import { buildApp, type CameraService, type RemoteGateDeps } from '../src/app.js';
+import { buildApp, type CameraService } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { listenHttp, type DualListener } from '../src/listen.js';
 import { LiveHub, type FrameSource } from '../src/media/liveHub.js';
-import { DeviceStore } from '../src/remote/devices.js';
-import { PairingCodes } from '../src/remote/pairing.js';
+import { RemoteAccess } from '../src/remote/remoteAccess.js';
 import { SettingsStore, type Settings } from '../src/settings/store.js';
 import { TEST_PAGE_MARKER } from './setup/staticDir.js';
 import { silentLogger, waitFor } from './helpers.js';
@@ -42,10 +41,22 @@ interface Running {
   listener: DualListener;
   app: FastifyInstance;
   hub: LiveHub;
-  remote: RemoteGateDeps & { hostName: string | undefined; secretValue: string | undefined };
+  remote: FixedRemote;
   port: number;
   /** How many times the desktop app's quit hook ran. */
   quits: number;
+}
+
+/** Remote access as if the helper were running, with a secret and host the test can change. */
+class FixedRemote extends RemoteAccess {
+  secretValue: string | undefined = SECRET;
+  hostName: string | undefined = HOST;
+  override secret(): string | undefined {
+    return this.secretValue;
+  }
+  override host(): string | undefined {
+    return this.hostName;
+  }
 }
 
 const running: Running[] = [];
@@ -78,18 +89,7 @@ async function start(
     },
     opts.settings,
   );
-  const remote = {
-    secretValue: SECRET as string | undefined,
-    hostName: HOST as string | undefined,
-    secret() {
-      return this.secretValue;
-    },
-    host() {
-      return this.hostName;
-    },
-    devices: new DeviceStore(dir, silentLogger),
-    pairing: new PairingCodes(),
-  };
+  const remote = new FixedRemote({ dataDir: dir, logger: silentLogger });
   const hub = new LiveHub({ source: new StillSource(), logger: silentLogger, idleTimeoutMs: 0 });
   const counts = { quits: 0 };
   // The settings and setup routes, and the quit hook, so the gate has real routes to guard.
