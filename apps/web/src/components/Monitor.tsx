@@ -8,9 +8,11 @@ import {
   FullscreenIcon,
   ListenIcon,
   PopOutIcon,
+  SettingsIcon,
   SoundOffIcon,
   SoundOnIcon,
 } from './Icons';
+import { LiveStage } from './LiveStage';
 import { PtzPad } from './PtzPad';
 import { SoundMeter } from './SoundMeter';
 
@@ -41,7 +43,13 @@ function useWakeLock(enabled: boolean) {
   }, [enabled]);
 }
 
-export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
+export function Monitor({
+  onSignOut,
+  onOpenSettings,
+}: {
+  onSignOut?: () => void;
+  onOpenSettings?: () => void;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const live = useLiveStream(videoRef);
@@ -103,19 +111,6 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleFullscreen, live]);
 
-  const overlay = (() => {
-    if (live.playerError) return { tone: 'error', text: live.playerError };
-    if (live.connection !== 'open') return { tone: 'wait', text: 'Connecting to monitor server…' };
-    if (live.stream === 'error') return { tone: 'error', text: live.detail ?? 'Camera error' };
-    if (live.stream === 'reconnecting')
-      return {
-        tone: 'wait',
-        text: `Reconnecting to camera…${live.detail ? ` (${live.detail})` : ''}`,
-      };
-    if (live.stream !== 'live') return { tone: 'wait', text: 'Waking up the camera…' };
-    return undefined;
-  })();
-
   const ptz = status?.ptz;
   const showPtz = ptz !== 'unsupported' && ptz !== 'disabled';
   const stats = status?.stream;
@@ -141,6 +136,17 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
             <span className="dot" />
             {live.connection === 'open' ? STATE_LABEL[live.stream] : 'Offline'}
           </span>
+          {onOpenSettings && (
+            <button
+              type="button"
+              className="btn btn-icon"
+              aria-label="Settings"
+              title="Settings"
+              onClick={onOpenSettings}
+            >
+              <SettingsIcon />
+            </button>
+          )}
           {onSignOut && (
             <button type="button" className="link" onClick={onSignOut}>
               Sign out
@@ -150,14 +156,12 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
       </header>
 
       <main className="layout">
-        <div className="stage" ref={stageRef} onDoubleClick={toggleFullscreen}>
-          <video ref={videoRef} muted playsInline autoPlay disablePictureInPicture={false} />
-          {overlay && (
-            <div className={`overlay overlay-${overlay.tone}`}>
-              {overlay.tone === 'wait' && <span className="spinner" aria-hidden="true" />}
-              <p>{overlay.text}</p>
-            </div>
-          )}
+        <LiveStage
+          live={live}
+          videoRef={videoRef}
+          stageRef={stageRef}
+          onDoubleClick={toggleFullscreen}
+        >
           {soundActive && <div className="sound-badge">Sound detected</div>}
           {isLive && !live.listening && (
             <button type="button" className="listen-cta" onClick={() => void live.startListening()}>
@@ -172,7 +176,7 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
               {stats.viewers > 1 ? ` · ${stats.viewers} viewers` : ''}
             </div>
           )}
-        </div>
+        </LiveStage>
 
         <aside className="side">
           <section className="panel">

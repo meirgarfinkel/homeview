@@ -3,6 +3,8 @@ import type { SessionResponse } from '@kasa/shared';
 import { api } from './lib/api';
 import { Login } from './components/Login';
 import { Monitor } from './components/Monitor';
+import { Settings } from './components/Settings';
+import { AllSet } from './components/setup/AllSet';
 import { SetupWizard } from './components/setup/SetupWizard';
 import { NotSetUp } from './components/setup/NotSetUp';
 
@@ -35,11 +37,20 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
   useEffect(refresh, [refresh]);
 
   const [finishing, setFinishing] = useState<'working' | 'stuck'>();
+  /** Set once, right after the first-run wizard, to show the All set page. */
+  const [allSet, setAllSet] = useState<{ autostart: boolean | null }>();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const afterSetup = useCallback(() => {
     setFinishing('working');
     sessionAfterSetup(retryMs).then(
-      (next) => {
+      async (next) => {
+        // The page only needs this for one checkbox, so a failed read just hides it.
+        const autostart = await api.settings().then(
+          (s) => s.autostart,
+          () => null,
+        );
         setSession(next);
+        setAllSet({ autostart });
         setFinishing(undefined);
       },
       () => setFinishing('stuck'),
@@ -77,8 +88,23 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
   if (!session.setupComplete) {
     return session.local ? <SetupWizard onDone={afterSetup} /> : <NotSetUp />;
   }
-  if (session.authRequired && !session.authenticated) return <Login onSuccess={refresh} />;
+  if (session.authRequired && !session.authenticated) {
+    return <Login local={session.local} onSuccess={refresh} />;
+  }
+  if (allSet) {
+    return (
+      <AllSet
+        lanUrl={session.lanUrl}
+        autostart={allSet.autostart}
+        onContinue={() => setAllSet(undefined)}
+      />
+    );
+  }
+  if (settingsOpen) return <Settings onClose={() => setSettingsOpen(false)} />;
   return (
-    <Monitor onSignOut={session.authRequired ? () => void api.logout().then(refresh) : undefined} />
+    <Monitor
+      onSignOut={session.authRequired ? () => void api.logout().then(refresh) : undefined}
+      onOpenSettings={() => setSettingsOpen(true)}
+    />
   );
 }

@@ -51,6 +51,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const post = <T = void>(path: string, body: unknown = {}) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(body) });
 
+const put = <T = void>(path: string, body: unknown) =>
+  request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
+
 export const api = {
   session: () => request<SessionResponse>('/api/session'),
   login: (password: string) => post('/api/login', { password }),
@@ -63,6 +66,16 @@ export const api = {
   presets: () => request<PtzPreset[]>('/api/ptz/presets'),
   goToPreset: (index: number) => post(`/api/ptz/presets/${index}/go`),
   settings: () => request<SettingsResponse>('/api/settings'),
+  changeViewerPassword: (current: string, password: string) =>
+    put('/api/settings/viewer-password', { current, password }),
+  changeCamera: (username: string, password: string, alias?: string) =>
+    put<SetupExistingResult>('/api/settings/camera', {
+      username,
+      password,
+      ...(alias === undefined ? {} : { alias }),
+    }),
+  setAutostart: (enabled: boolean) => put('/api/app/autostart', { enabled }),
+  quit: () => post('/api/app/quit'),
   setup: {
     password: (password: string) => post('/api/setup/password', { password }),
     existingCamera: (username: string, password: string, alias?: string) =>
