@@ -1,0 +1,36 @@
+{
+  "name": "@kasa/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "build": "tsup",
+    "start": "node --enable-source-maps dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json",
+    "fake-camera": "tsx src/scripts/fakeCamera.ts",
+    "discover": "tsx src/scripts/discover.ts",
+    "probe": "tsx src/scripts/probe.ts"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.12",
+    "@fastify/websocket": "^11.3.7",
+    "fastify": "^5.12.8",
+    "pino": "^10.4.0",
+    "selfsigned": "^5.5.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@kasa/shared": "workspace:*",
+    "@types/node": "^24.19.2",
+    "@types/ws": "^8.18.2",
+    "pino-pretty": "^13.2.0",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.1",
+    "ws": "^8.23.0"
+  }
+}

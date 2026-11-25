@@ -1,0 +1,35 @@
+{
+  "name": "kasa-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Watch a TP-Link Kasa camera from any browser on your local network. No cloud.",
+  "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @kasa/server --filter @kasa/web dev",
+    "dev:fake-camera": "pnpm --filter @kasa/server fake-camera",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter @kasa/server start",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @kasa/web test:e2e",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "discover": "pnpm --filter @kasa/server discover",
+    "probe": "pnpm --filter @kasa/server probe",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.74.0"
+  }
+}
