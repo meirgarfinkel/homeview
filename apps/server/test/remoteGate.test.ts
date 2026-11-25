@@ -13,7 +13,7 @@ import { listenHttp, type DualListener } from '../src/listen.js';
 import { LiveHub, type FrameSource } from '../src/media/liveHub.js';
 import { DeviceStore } from '../src/remote/devices.js';
 import { PairingCodes } from '../src/remote/pairing.js';
-import type { Settings } from '../src/settings/store.js';
+import { SettingsStore, type Settings } from '../src/settings/store.js';
 import { TEST_PAGE_MARKER } from './setup/staticDir.js';
 import { silentLogger, waitFor } from './helpers.js';
 
@@ -44,6 +44,8 @@ interface Running {
   hub: LiveHub;
   remote: RemoteGateDeps & { hostName: string | undefined; secretValue: string | undefined };
   port: number;
+  /** How many times the desktop app's quit hook ran. */
+  quits: number;
 }
 
 const running: Running[] = [];
@@ -89,18 +91,32 @@ async function start(
     pairing: new PairingCodes(),
   };
   const hub = new LiveHub({ source: new StillSource(), logger: silentLogger, idleTimeoutMs: 0 });
+  const counts = { quits: 0 };
+  // The settings and setup routes, and the quit hook, so the gate has real routes to guard.
   const app = await buildApp({
     config,
     ...(opts.noCamera ? {} : { camera, hub }),
     logger: silentLogger,
     remote,
+    settings: new SettingsStore(path.join(dir, 'settings')),
+    hooks: { quit: () => void counts.quits++ },
+    desktop: true,
   });
   const listener = await listenHttp(app, {
     host: '127.0.0.1',
     port: 0,
     ...(opts.remote === false ? {} : { remote: true }),
   });
-  const r = { listener, app, hub, remote, port: listener.address().port };
+  const r = {
+    listener,
+    app,
+    hub,
+    remote,
+    port: listener.address().port,
+    get quits() {
+      return counts.quits;
+    },
+  };
   running.push(r);
   return r;
 }
@@ -312,8 +328,33 @@ describe('the remote gate', () => {
       expect([url, res.status]).toEqual([url, 403]);
       expect(res.json()).toEqual(localOnly);
     }
-    // An encoded path doesn't reach the settings route either.
-    expect((await call(r, '/api/%73ettings', { headers: tunnel(cookie) })).status).toBe(404);
+    expect(r.quits).toBe(0);
+  });
+
+  it('checks the route a percent-encoded path reaches, not the raw path', async () => {
+    // The router decodes paths before it matches, so these reach real routes.
+    const { cookie } = await pair(r);
+    const tries: [string, string][] = [
+      ['GET', '/api/%73ettings'],
+      ['GET', '/%61pi/settings'],
+      ['GET', '/%61pi/setup/onboarding'],
+      ['POST', '/%61pi/app/quit'],
+      ['POST', '/api/%61pp/quit'],
+    ];
+    for (const [method, url] of tries) {
+      const body = method === 'GET' ? undefined : {};
+      const res = await call(r, url, { method, headers: tunnel(cookie), body });
+      expect([url, res.status, res.json().error]).toEqual([url, 403, 'local-only']);
+    }
+    expect(r.quits).toBe(0);
+    for (const url of ['/%61pi/status', '/api/%73tatus']) {
+      const res = await call(r, url, { headers: tunnel() });
+      expect([url, res.status, res.json().error]).toEqual([url, 401, 'device-not-paired']);
+    }
+    // A paired phone that hasn't signed in still needs a session behind an encoded path.
+    const device = r.remote.devices.add('iPhone');
+    const res = await call(r, '/%61pi/status', { headers: tunnel(`kasa_device=${device.token}`) });
+    expect([res.status, res.json().error]).toEqual([401, 'unauthorized']);
   });
 
   it('refuses cross-origin changes', async () => {
@@ -414,5 +455,56 @@ describe('the normal listener', () => {
     expect(session.status).toBe(200);
     expect(session.json()).toMatchObject({ local: true });
     expect(session.json()).not.toHaveProperty('remote');
+  });
+});
+
+describe('the normal listener with percent-encoded paths', () => {
+  const local = (cookie?: string): Record<string, string> =>
+    cookie ? { host: '127.0.0.1', cookie } : { host: '127.0.0.1' };
+
+  async function signIn(r: Running): Promise<string> {
+    const res = await call(r, '/api/login', {
+      method: 'POST',
+      headers: local(),
+      body: { password: VIEWER },
+    });
+    expect(res.status).toBe(204);
+    return cookieValues(res);
+  }
+
+  function openLive(r: Running, url: string, cookie?: string): Promise<number> {
+    const ws = new WebSocket(`ws://127.0.0.1:${r.port}${url}`, {
+      headers: local(cookie),
+    });
+    ws.on('error', () => undefined);
+    return new Promise<number>((resolve) => {
+      ws.once('open', () => {
+        ws.close();
+        resolve(101);
+      });
+      ws.once('unexpected-response', (_req, res) => {
+        ws.terminate();
+        resolve(res.statusCode ?? 0);
+      });
+    });
+  }
+
+  it('needs a session for the route an encoded path reaches', async () => {
+    const r = await start({ remote: false });
+    for (const url of ['/%61pi/status', '/%61pi/settings', '/api/%73ettings', '/api/%73tatus']) {
+      const res = await call(r, url, { headers: local() });
+      expect([url, res.status, res.json().error]).toEqual([url, 401, 'unauthorized']);
+      expect(res.headers['cache-control']).toBe('no-store');
+    }
+    expect(await openLive(r, '/%61pi/live')).toBe(401);
+    const quit = await call(r, '/%61pi/app/quit', { method: 'POST', headers: local(), body: {} });
+    expect(quit.status).toBe(401);
+    expect(r.quits).toBe(0);
+
+    const cookie = await signIn(r);
+    for (const url of ['/%61pi/status', '/%61pi/settings', '/api/%73ettings']) {
+      expect([url, (await call(r, url, { headers: local(cookie) })).status]).toEqual([url, 200]);
+    }
+    expect(await openLive(r, '/%61pi/live', cookie)).toBe(101);
   });
 });

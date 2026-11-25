@@ -142,6 +142,15 @@ const deviceNotPaired = {
 
 const forbidden = { error: 'forbidden', message: 'Forbidden' };
 
+/**
+ * The path every check uses. The router decodes a path before it matches,
+ * so "/%61pi/status" reaches the /api/status route. Checks therefore use the
+ * route that matched, and the raw path only when no route matched.
+ */
+function checkedPath(req: FastifyRequest): string {
+  return req.routeOptions.url ?? req.url.split('?', 1)[0]!;
+}
+
 function sameSecret(given: string | string[] | undefined, want: string | undefined): boolean {
   if (typeof given !== 'string' || !want) return false;
   const digest = (v: string) => createHash('sha256').update(v, 'utf8').digest();
@@ -174,10 +183,8 @@ function remoteGate(
     req.log.warn({ host: req.headers.host }, 'Blocked remote request with unexpected Host header');
     return reply.code(403).send(forbidden);
   }
-  const url = req.url.split('?', 1)[0]!;
-  // The route that matched, too, in case the router decoded something the raw URL hides.
-  const route = req.routeOptions.url ?? '';
-  const isApi = url.startsWith('/api/') || route.startsWith('/api/');
+  const url = checkedPath(req);
+  const isApi = url.startsWith('/api/');
   if (isApi && !ready && url !== '/api/health') return reply.code(403).send(notSetUp);
   const isWebSocket = req.headers.upgrade?.toLowerCase() === 'websocket';
   const isMutation = req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS';
@@ -187,7 +194,7 @@ function remoteGate(
   }
   if (!isApi) return undefined;
   if (REMOTE_OPEN_API.has(url)) return undefined;
-  if (REMOTE_FORBIDDEN_API.test(url) || REMOTE_FORBIDDEN_API.test(route)) {
+  if (REMOTE_FORBIDDEN_API.test(url)) {
     return reply.code(403).send(remoteLocalOnly);
   }
   const device = remote.devices.find(parseCookies(req.headers.cookie)[DEVICE_COOKIE]);
@@ -251,7 +258,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       req.log.warn({ origin: req.headers.origin }, 'Blocked cross-origin request');
       return reply.code(403).send({ error: 'forbidden_origin', message: 'Cross-origin request' });
     }
-    const url = req.url.split('?', 1)[0]!;
+    const url = checkedPath(req);
     // The socket's address, never a header: trustProxy is off.
     if (url.startsWith('/api/') && !isLocalRequest(req)) {
       // Nobody else may use Kasa Home until this computer has chosen a password.
@@ -296,7 +303,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     reply.header('Cross-Origin-Opener-Policy', 'same-origin');
     reply.header('Cross-Origin-Resource-Policy', 'same-origin');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    if (req.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store');
+    if (checkedPath(req).startsWith('/api/')) reply.header('Cache-Control', 'no-store');
     // No HSTS: a self-signed certificate plus HSTS can lock users out of the page.
     return payload;
   });
