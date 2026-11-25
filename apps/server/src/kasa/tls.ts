@@ -1,4 +1,4 @@
-import type { ConnectionOptions, TLSSocket } from 'node:tls';
+import tls, { type ConnectionOptions, type TLSSocket } from 'node:tls';
 
 /**
  * TLS settings for talking to the camera.
@@ -39,4 +39,17 @@ export function assertPinnedCertificate(socket: TLSSocket, config: CameraTlsConf
       `Camera certificate fingerprint ${actual || '(none)'} does not match KASA_CERT_SHA256`,
     );
   }
+}
+
+/** Connect, read the camera's certificate fingerprint, and disconnect. */
+export function fetchFingerprint(host: string, port: number, timeoutMs = 4000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({ ...cameraTlsOptions, host, port }, () => {
+      const fp = peerFingerprint(socket);
+      socket.end();
+      resolve(fp);
+    });
+    socket.setTimeout(timeoutMs, () => socket.destroy(new Error('TLS handshake timed out')));
+    socket.on('error', reject);
+  });
 }

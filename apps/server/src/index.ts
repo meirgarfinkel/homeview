@@ -3,6 +3,8 @@ import { buildApp, clientAllowlist } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
 import { loadEnvFile } from './env.js';
 import { Camera, CameraLocateError, locateCamera } from './kasa/camera.js';
+import { CameraWatcher } from './kasa/cameraWatcher.js';
+import { syncTimeZone } from './kasa/timeZone.js';
 import { listenHttpsWithRedirect } from './listen.js';
 import { createLogger } from './logger.js';
 import { LiveHub } from './media/liveHub.js';
@@ -77,12 +79,38 @@ async function main(): Promise<void> {
     (err: Error) => logger.error({ err: err.message }, 'Could not query the camera'),
   );
 
+  // Follow the camera if its address changes, unless KASA_HOST pins it.
+  let watcher: CameraWatcher | undefined;
+  if (!config.camera.host && device) {
+    watcher = new CameraWatcher({
+      camera,
+      device,
+      apiPort: config.camera.apiPort,
+      pinnedSha256: config.camera.certSha256,
+      allowPublicHost: config.camera.allowPublicHost,
+      logger: logger.child({ component: 'locate' }),
+    });
+    watcher.start();
+  }
+
+  // Keep the camera's clock (and its on-screen timestamp) in this time zone.
+  const zone = config.camera.timeZone;
+  if (zone) {
+    const sync = () =>
+      syncTimeZone(camera.linkie, zone, logger).catch((err: Error) =>
+        logger.warn({ err: err.message }, "Could not check the camera's time zone"),
+      );
+    void sync();
+    setInterval(() => void sync(), 60 * 60 * 1000).unref();
+  }
+
   let closing = false;
   const shutdown = async (signal: string) => {
     if (closing) return;
     closing = true;
     logger.info({ signal }, 'Shutting down');
     const force = setTimeout(() => process.exit(1), 5000).unref();
+    watcher?.stop();
     await camera.ptz.dispose();
     hub.close();
     await closeServer();

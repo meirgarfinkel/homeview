@@ -3,6 +3,14 @@ import type { StreamState } from '@kasa/shared';
 import { useLiveStream } from '../hooks/useLiveStream';
 import { usePolling } from '../hooks/usePolling';
 import { api } from '../lib/api';
+import {
+  CameraIcon,
+  FullscreenIcon,
+  ListenIcon,
+  PopOutIcon,
+  SoundOffIcon,
+  SoundOnIcon,
+} from './Icons';
 import { PtzPad } from './PtzPad';
 import { SoundMeter } from './SoundMeter';
 
@@ -51,7 +59,7 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
 
   useEffect(() => {
     const name = camera?.alias ?? 'Nursery';
-    document.title = soundActive ? `🔊 Sound — ${name}` : `${name} · Monitor`;
+    document.title = soundActive ? `Sound — ${name}` : `${name} · Monitor`;
   }, [soundActive, camera?.alias]);
 
   useEffect(() => localStorageSet('soundThreshold', String(sensitivity)), [sensitivity]);
@@ -153,7 +161,7 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
           {soundActive && <div className="sound-badge">Sound detected</div>}
           {isLive && !live.listening && (
             <button type="button" className="listen-cta" onClick={() => void live.startListening()}>
-              🔈 Tap to listen
+              <ListenIcon /> Tap to listen
             </button>
           )}
           {stats?.width && (
@@ -173,11 +181,13 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
             <div className="row">
               <button
                 type="button"
-                className={`btn${live.listening ? ' btn-on' : ''}`}
+                className={`btn btn-icon${live.listening ? ' btn-on' : ''}`}
                 onClick={() => void (live.listening ? live.stopListening() : live.startListening())}
                 aria-pressed={live.listening}
+                aria-label={live.listening ? 'Mute sound' : 'Listen'}
+                title={live.listening ? 'Mute sound (M)' : 'Listen (M)'}
               >
-                {live.listening ? '🔊 Listening' : '🔇 Muted'}
+                {live.listening ? <SoundOnIcon /> : <SoundOffIcon />}
               </button>
               <input
                 type="range"
@@ -210,15 +220,15 @@ export function Monitor({ onSignOut }: { onSignOut?: () => void }) {
             <h2>View</h2>
             <div className="row wrap">
               <button type="button" className="btn" onClick={toggleFullscreen}>
-                ⛶ Fullscreen
+                <FullscreenIcon /> Fullscreen
               </button>
               {'pictureInPictureEnabled' in document && (
                 <button type="button" className="btn" onClick={togglePip}>
-                  ⧉ Pop out
+                  <PopOutIcon /> Pop out
                 </button>
               )}
               <button type="button" className="btn" onClick={snapshot} disabled={!isLive}>
-                📷 Snapshot
+                <CameraIcon /> Snapshot
               </button>
             </div>
             <p className="hint">Shortcuts: F fullscreen · M sound · arrows pan</p>

@@ -132,6 +132,7 @@ describe('CameraSource against the fake camera', () => {
     source.on('state', (s) => states.push(s));
     source.start();
     await waitFor(() => states.includes('error'));
+    expect(states).not.toContain('live');
     source.stop();
   });
 });
@@ -174,15 +175,17 @@ describe('HTTP app end to end', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('blocks cross-origin mutations', async () => {
+  it('blocks cross-origin mutations before they reach the camera', async () => {
+    fake.commands.length = 0;
     const res = await app.inject({
       method: 'POST',
-      url: '/api/ptz/stop',
+      url: '/api/ptz/move',
       ...local,
       headers: { ...local.headers, origin: 'http://evil.example.com' },
-      payload: {},
+      payload: { direction: 'left' },
     });
     expect(res.statusCode).toBe(403);
+    expect(fake.commands).toEqual([]);
   });
 
   it('sets security headers', async () => {
@@ -203,7 +206,7 @@ describe('HTTP app end to end', () => {
     });
   });
 
-  it('moves and stops the camera with the commands the Kasa app uses', async () => {
+  it('steps and stops the camera with the commands the Kasa app uses', async () => {
     fake.commands.length = 0;
     const move = await app.inject({
       method: 'POST',
@@ -214,11 +217,11 @@ describe('HTTP app end to end', () => {
     expect(move.statusCode).toBe(204);
     const stop = await app.inject({ method: 'POST', url: '/api/ptz/stop', ...local, payload: {} });
     expect(stop.statusCode).toBe(204);
-    expect(fake.commands).toEqual([
+    expect(fake.commands.map(({ module, method, args }) => ({ module, method, args }))).toEqual([
       {
         module: 'smartlife.cam.ipcamera.ptz',
         method: 'set_move',
-        args: { direction: 'left', speed: 8 },
+        args: { direction: 'left', speed: 2 },
       },
       { module: 'smartlife.cam.ipcamera.ptz', method: 'set_stop', args: {} },
     ]);
@@ -226,15 +229,30 @@ describe('HTTP app end to end', () => {
     expect(status.json().ptz).toBe('supported');
   });
 
-  it('validates PTZ input', async () => {
-    const res = await app.inject({
+  it('holds a direction with one set_target toward the edge, then stops', async () => {
+    fake.commands.length = 0;
+    const hold = await app.inject({
       method: 'POST',
       url: '/api/ptz/move',
       ...local,
-      payload: { direction: 'sideways' },
+      payload: { direction: 'up', mode: 'hold' },
     });
-    expect(res.statusCode).toBe(400);
+    expect(hold.statusCode).toBe(204);
+    await app.inject({ method: 'POST', url: '/api/ptz/stop', ...local, payload: {} });
+    const sent = fake.commands.map((c) => c.method);
+    expect(sent).toEqual(['get_position', 'set_target', 'set_stop']);
+    expect(fake.commands[1]?.args).toMatchObject({ y: 99_999 });
   });
+
+  it.each([{ direction: 'sideways' }, { direction: 'up', mode: 'forever' }, {}])(
+    'rejects bad PTZ input %j without touching the camera',
+    async (payload) => {
+      fake.commands.length = 0;
+      const res = await app.inject({ method: 'POST', url: '/api/ptz/move', ...local, payload });
+      expect(res.statusCode).toBe(400);
+      expect(fake.commands).toEqual([]);
+    },
+  );
 
   it('lists presets and goes to one', async () => {
     const list = await app.inject({ url: '/api/ptz/presets', ...local });
@@ -250,7 +268,7 @@ describe('HTTP app end to end', () => {
       payload: {},
     });
     expect(go.statusCode).toBe(204);
-    expect(fake.commands).toEqual([
+    expect(fake.commands.map(({ module, method, args }) => ({ module, method, args }))).toEqual([
       { module: 'smartlife.cam.ipcamera.ptz', method: 'set_run_to_preset', args: { index: 2 } },
     ]);
   });

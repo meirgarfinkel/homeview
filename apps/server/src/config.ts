@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { hostTimeZone, isValidTimeZone } from './kasa/timeZone.js';
 import { findRepoRoot } from './env.js';
 import { z } from 'zod';
 
@@ -58,13 +59,19 @@ const schema = z.object({
     )
     .optional(),
   KASA_CERT_SHA256: optionalString,
+  // IANA zone for the camera's clock, e.g. Europe/London. Default: this computer's.
+  KASA_TIMEZONE: optionalString.refine((v) => v === undefined || isValidTimeZone(v), {
+    message: 'KASA_TIMEZONE must be an IANA time zone such as Europe/London',
+  }),
+  KASA_SYNC_TIMEZONE: bool(true),
   KASA_ALLOW_PUBLIC_HOST: bool(false),
 
   // Behaviour
   IDLE_DISCONNECT_SECONDS: z.coerce.number().int().min(0).max(3600).default(30),
   PTZ_ENABLED: bool(true),
-  // The camera accepts 1-10 (11+ returns err_code -41203).
-  PTZ_SPEED: z.coerce.number().int().min(1).max(10).default(8),
+  // A tap moves one step at this speed, 1-10 (the camera rejects 11+ with
+  // err_code -41203). Holding a direction glides at the camera's own speed.
+  PTZ_STEP_SPEED: z.coerce.number().int().min(1).max(10).default(2),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -91,9 +98,11 @@ export interface Config {
     streamPath: string;
     certSha256: string | undefined;
     allowPublicHost: boolean;
+    /** Time zone to keep the camera's clock in, or undefined to leave it alone. */
+    timeZone: string | undefined;
   };
   idleDisconnectMs: number;
-  ptz: { enabled: boolean; speed: number };
+  ptz: { enabled: boolean; stepSpeed: number };
 }
 
 export class ConfigError extends Error {
@@ -151,8 +160,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       streamPath: streamPath(e.KASA_STREAM_RESOLUTION),
       certSha256: e.KASA_CERT_SHA256,
       allowPublicHost: e.KASA_ALLOW_PUBLIC_HOST,
+      timeZone: e.KASA_SYNC_TIMEZONE ? (e.KASA_TIMEZONE ?? hostTimeZone()) : undefined,
     },
     idleDisconnectMs: e.IDLE_DISCONNECT_SECONDS * 1000,
-    ptz: { enabled: e.PTZ_ENABLED, speed: e.PTZ_SPEED },
+    ptz: { enabled: e.PTZ_ENABLED, stepSpeed: e.PTZ_STEP_SPEED },
   };
 }

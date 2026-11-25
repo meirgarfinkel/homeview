@@ -93,6 +93,22 @@ export interface FakeCameraOptions {
   omitPartLength?: boolean;
   /** Send PTZ commands as unsupported. */
   noPtz?: boolean;
+  /** Reuse a certificate (default: a fresh self-signed one per start). */
+  tls?: { key: string; cert: string };
+  /**
+   * Pan/tilt motor model, matching a KC410S: each set_move is one step of
+   * 30 + 12 * speed units that takes `stepMs`; steps sent while one runs are
+   * queued; set_target glides at `unitsPerSec`; set_stop halts everything;
+   * motion stops at +/-`limit` (x) and +/-`tiltLimit` (y); set_move takes
+   * `replyMs` to answer.
+   */
+  ptzMotor?: {
+    stepMs?: number;
+    limit?: number;
+    tiltLimit?: number;
+    unitsPerSec?: number;
+    replyMs?: number;
+  };
   /**
    * Start like a factory-reset camera: not linked to an account, accepting
    * only this login until `cloud.set_bind` links `username`/`password`.
@@ -125,12 +141,24 @@ export interface RecordedCommand {
   module: string;
   method: string;
   args: unknown;
+  /** How long the connection was open before this request arrived. */
+  connectionAgeMs?: number;
 }
 
 export class FakeCamera {
   readonly commands: RecordedCommand[] = [];
   bound: boolean;
   alias: string;
+  timeZone = { timezone: 'UTC+0:00', area: 'GMT' };
+  osdTime: 'on' | 'off';
+  private pos = { x: 0, y: 0 };
+  private motion:
+    | { from: { x: number; y: number }; to: { x: number; y: number }; start: number; ms: number }
+    | undefined;
+  private queuedSteps: { dx: number; dy: number }[] = [];
+  private readonly connectedAt = new WeakMap<object, number>();
+  /** When each TLS connection to the API port was opened (performance.now()). */
+  readonly connectionsOpened: number[] = [];
   onboardingStatus: string;
   uplink: FakeUplink | undefined;
   private streamServer: https.Server | undefined;
@@ -146,6 +174,8 @@ export class FakeCamera {
     this.bound = !opts.setupMode;
     this.alias = opts.alias ?? 'fake nursery';
     this.onboardingStatus = opts.setupMode ? 'none' : 'done';
+    // A reset camera has its on-screen time off.
+    this.osdTime = opts.setupMode ? 'off' : 'on';
   }
 
   get activeStreams(): number {
@@ -153,13 +183,14 @@ export class FakeCamera {
   }
 
   async start(host = '127.0.0.1', streamPort = 0, apiPort = 0, discoveryPort?: number) {
-    const pems = await generate([{ name: 'commonName', value: 'fake-kasa-camera' }], {
-      keySize: 2048,
-      notAfterDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    });
-    const tlsOpts = { key: pems.private, cert: pems.cert };
+    const tlsOpts = this.opts.tls ?? (await fakeCameraCertificate());
     this.streamServer = https.createServer(tlsOpts, (req, res) => this.handleStream(req, res));
     this.apiServer = https.createServer(tlsOpts, (req, res) => this.handleApi(req, res));
+    this.apiServer.on('secureConnection', (socket) => {
+      const now = performance.now();
+      this.connectedAt.set(socket, now);
+      this.connectionsOpened.push(now);
+    });
     await Promise.all([
       new Promise<void>((r) => this.streamServer!.listen(streamPort, host, r)),
       new Promise<void>((r) => this.apiServer!.listen(apiPort, host, r)),
@@ -294,6 +325,7 @@ export class FakeCamera {
       res.writeHead(302, { Location: 'https://127.0.0.1:4444/' }).end();
       return;
     }
+    const receivedAt = performance.now();
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
@@ -322,13 +354,81 @@ export class FakeCamera {
         if (module === 'context') continue;
         const moduleOut: Record<string, unknown> = {};
         for (const [method, args] of Object.entries(methods ?? {})) {
-          this.commands.push({ module, method, args });
+          const opened = this.connectedAt.get(req.socket);
+          this.commands.push({
+            module,
+            method,
+            args,
+            ...(opened !== undefined ? { connectionAgeMs: receivedAt - opened } : {}),
+          });
           moduleOut[method] = this.respond(module, method, (args ?? {}) as Record<string, unknown>);
         }
         out[module] = moduleOut;
       }
-      reply(out);
+      // A real camera takes a while to answer a move.
+      const moved = this.commands.at(-1)?.method === 'set_move';
+      const delay = moved ? (this.opts.ptzMotor?.replyMs ?? 0) : 0;
+      if (delay > 0) setTimeout(() => reply(out), delay);
+      else reply(out);
     });
+  }
+
+  /** Current pan/tilt position, as the motor would report it now. */
+  get position(): { x: number; y: number } {
+    this.advanceMotor();
+    return { ...this.pos };
+  }
+
+  private advanceMotor(): void {
+    const now = performance.now();
+    while (this.motion) {
+      const m = this.motion;
+      const t = Math.min(1, (now - m.start) / m.ms);
+      this.pos = {
+        x: Math.round(m.from.x + (m.to.x - m.from.x) * t),
+        y: Math.round(m.from.y + (m.to.y - m.from.y) * t),
+      };
+      if (t < 1) return;
+      this.motion = undefined;
+      const next = this.queuedSteps.shift();
+      if (next) this.beginStep(next, m.start + m.ms);
+    }
+  }
+
+  private clampToTravel(p: { x: number; y: number }): { x: number; y: number } {
+    const lx = this.opts.ptzMotor?.limit ?? 1934;
+    const ly = this.opts.ptzMotor?.tiltLimit ?? 387;
+    return {
+      x: Math.max(-lx, Math.min(lx, p.x)),
+      y: Math.max(-ly, Math.min(ly, p.y)),
+    };
+  }
+
+  private beginStep(delta: { dx: number; dy: number }, start: number): void {
+    this.motion = {
+      from: { ...this.pos },
+      to: this.clampToTravel({ x: this.pos.x + delta.dx, y: this.pos.y + delta.dy }),
+      start,
+      ms: this.opts.ptzMotor?.stepMs ?? 400,
+    };
+  }
+
+  private glideTo(target: { x: number; y: number }): void {
+    this.advanceMotor();
+    this.queuedSteps = [];
+    const to = this.clampToTravel(target);
+    const distance = Math.max(Math.abs(to.x - this.pos.x), Math.abs(to.y - this.pos.y));
+    const ms = (distance / (this.opts.ptzMotor?.unitsPerSec ?? 450)) * 1000;
+    this.motion = ms > 0 ? { from: { ...this.pos }, to, start: performance.now(), ms } : undefined;
+  }
+
+  private startStep(direction: string, speed: number): void {
+    this.advanceMotor();
+    const size = 30 + 12 * speed;
+    const dx = direction.includes('left') ? -size : direction.includes('right') ? size : 0;
+    const dy = direction.includes('top') ? size : direction.includes('bottom') ? -size : 0;
+    if (this.motion) this.queuedSteps.push({ dx, dy });
+    else this.beginStep({ dx, dy }, performance.now());
   }
 
   private respond(
@@ -391,6 +491,26 @@ export class FakeCamera {
       if (method === 'get_connect_status')
         return { err_code: -10008, err_msg: 'Unsupported API call.' };
     }
+    if (cam('dateTime')) {
+      if (method === 'get_time_zone') return { ...ok, ...this.timeZone };
+      if (method === 'set_time_zone') {
+        if (
+          typeof args['timezone'] !== 'string' ||
+          !/^UTC[+-]\d{1,2}:\d{2}$/.test(args['timezone'])
+        ) {
+          return { err_code: -40101, err_msg: 'parameter format error' };
+        }
+        this.timeZone = { timezone: args['timezone'], area: String(args['area'] ?? '') };
+        return ok;
+      }
+    }
+    if (cam('OSD')) {
+      if (method === 'get_time_is_enable') return { ...ok, value: this.osdTime };
+      if (method === 'set_time_is_enable' && (args['value'] === 'on' || args['value'] === 'off')) {
+        this.osdTime = args['value'];
+        return ok;
+      }
+    }
     if (cam('system')) {
       if (method === 'set_alias' && typeof args['value'] === 'string') {
         this.alias = args['value'];
@@ -431,11 +551,46 @@ export class FakeCamera {
           ],
         };
       }
-      if (['set_move', 'set_stop', 'set_run_to_preset', 'set_target'].includes(method)) {
+      if (method === 'get_position') {
+        return { err_code: 0, ...this.position };
+      }
+      if (method === 'set_move') {
+        const speed = Number(args['speed']);
+        if (!Number.isInteger(speed))
+          return { err_code: -41202, err_msg: 'parameter format error' };
+        if (speed < 1 || speed > 10)
+          return { err_code: -41203, err_msg: 'The parameter value error.' };
+        this.startStep(String(args['direction']), speed);
+        return { err_code: 0 };
+      }
+      if (method === 'set_stop') {
+        this.advanceMotor();
+        this.motion = undefined;
+        this.queuedSteps = [];
+        return { err_code: 0 };
+      }
+      if (method === 'set_target') {
+        const x = Number(args['x']);
+        const y = Number(args['y']);
+        if (!Number.isFinite(x) || !Number.isFinite(y))
+          return { err_code: -41202, err_msg: 'parameter format error' };
+        this.glideTo({ x, y });
+        return { err_code: 0 };
+      }
+      if (method === 'set_run_to_preset') {
         return { err_code: 0 };
       }
       return { err_code: -2, err_msg: 'method not support' };
     }
     return { err_code: -1, err_msg: 'module not support' };
   }
+}
+
+/** A self-signed certificate like the ones Kasa cameras present. */
+export async function fakeCameraCertificate(): Promise<{ key: string; cert: string }> {
+  const pems = await generate([{ name: 'commonName', value: 'fake-kasa-camera' }], {
+    keySize: 2048,
+    notAfterDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  });
+  return { key: pems.private, cert: pems.cert };
 }

@@ -68,6 +68,9 @@ export interface StreamStats {
 
 export const PTZ_DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 export type PtzDirection = (typeof PTZ_DIRECTIONS)[number];
+/** `step`: one tap, one small step. `hold`: keep moving while repeated. */
+export const PTZ_MOVE_MODES = ['step', 'hold'] as const;
+export type PtzMoveMode = (typeof PTZ_MOVE_MODES)[number];
 
 export interface PtzPreset {
   index: number;

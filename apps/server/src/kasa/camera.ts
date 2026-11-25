@@ -65,17 +65,14 @@ export async function locateCamera(
 /** Everything the web layer needs to know about one camera. */
 export class Camera {
   readonly credentials: CameraCredentials;
+  private _host: string;
   readonly linkie: LinkieClient;
   readonly source: CameraSource;
   readonly ptz: PtzController;
   private infoCache: { at: number; value: CameraInfo } | undefined;
 
-  constructor(
-    readonly host: string,
-    cfg: Config,
-    logger: Logger,
-    device?: DiscoveredDevice,
-  ) {
+  constructor(host: string, cfg: Config, logger: Logger, device?: DiscoveredDevice) {
+    this._host = host;
     const cam = cfg.camera;
     this.credentials = new CameraCredentials(cam.username, cam.password, cam.passwordEncoding);
     this.credentials.applyCipherOptions(device?.sysinfo.c_opt);
@@ -99,9 +96,23 @@ export class Camera {
       linkie: this.linkie,
       logger: logger.child({ component: 'ptz' }),
       enabled: cfg.ptz.enabled,
-      speed: cfg.ptz.speed,
+      stepSpeed: cfg.ptz.stepSpeed,
     });
     if (device) this.infoCache = { at: Date.now(), value: toCameraInfo(host, device.sysinfo) };
+  }
+
+  get host(): string {
+    return this._host;
+  }
+
+  /** The camera moved to a new IP: point every client at it. */
+  relocate(host: string, device?: DiscoveredDevice): void {
+    this._host = host;
+    this.linkie.setHost(host);
+    this.source.setHost(host);
+    this.infoCache = device
+      ? { at: Date.now(), value: toCameraInfo(host, device.sysinfo) }
+      : undefined;
   }
 
   /** Camera details, cached for a minute. */

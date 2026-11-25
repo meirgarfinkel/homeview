@@ -26,6 +26,7 @@ import {
   type LoginCandidate,
   type WifiNetwork,
 } from '../kasa/setup.js';
+import { cameraTimeZone, hostTimeZone } from '../kasa/timeZone.js';
 import { updateEnvFile } from '../setup/envFile.js';
 import * as nm from '../setup/nmcli.js';
 
@@ -259,10 +260,15 @@ async function main(): Promise<void> {
     const homeLogin = await findWorkingLogin({ host: onHome.host, apiPort }, [login.candidate]);
     if (!homeLogin) throw new Abort('The camera stopped accepting the setup login.');
     try {
+      const zone = process.env['KASA_TIMEZONE'] || hostTimeZone();
       const result = await finishSetup(homeLogin.client, {
         alias,
+        timeZone: cameraTimeZone(zone),
+        showTime: true,
         ...(bind && acct ? { bindAccount: acct } : {}),
       });
+      if (result.timeZoneSet) say(`Camera clock set to ${zone}, with the time shown on the video.`);
+      for (const w of result.warnings) say(`Skipped ${w}`);
       if (result.bound) say(`Linked to your account (password sent as ${result.bindPassword}).`);
     } catch (err) {
       if (err instanceof LinkieError) {
@@ -278,18 +284,26 @@ async function main(): Promise<void> {
     say(`Camera login is now: ${finalLogin.candidate.label}.`);
 
     const envPath = process.env['ENV_FILE'] ?? path.join(findRepoRoot() ?? process.cwd(), '.env');
-    const values: Record<string, string> = { KASA_HOST: onHome.host };
+    // The monitor finds the camera by itself and follows it if its address
+    // changes, so no address is saved. An old pinned KASA_HOST is cleared.
+    const values: Record<string, string> = {};
+    if (process.env['KASA_HOST']) values['KASA_HOST'] = '';
     if (finalLogin.candidate.label !== 'your Kasa account') {
       values['KASA_USERNAME'] = finalLogin.candidate.username;
       values['KASA_PASSWORD'] = finalLogin.candidate.password;
     }
-    say(`\nSave ${Object.keys(values).join(', ')} to ${envPath}?`);
-    if (values['KASA_USERNAME']) say('This replaces the Kasa login currently saved there.');
-    if (await confirm('Save?')) {
-      updateEnvFile(envPath, values);
-      say('Saved. Restart the monitor: systemctl --user restart kasa-monitor');
+    if (Object.keys(values).length > 0) {
+      const what = Object.keys(values)
+        .map((k) => (values[k] === '' ? `clear ${k}` : `set ${k}`))
+        .join(', ');
+      say(`\nUpdate ${envPath} (${what})?`);
+      if (values['KASA_USERNAME']) say('This replaces the Kasa login currently saved there.');
+      if (await confirm('Save?')) {
+        updateEnvFile(envPath, values);
+        say('Saved.');
+      }
     }
-    say('\nDone. Tip: give the camera a fixed address in your router so it never moves.');
+    say('\nDone. Restart the monitor so it picks up the camera (it finds it automatically).');
   } finally {
     if (onCameraNetwork) await returnHome(autoSwitch, homeProfile).catch(() => undefined);
   }

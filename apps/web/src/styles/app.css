@@ -286,6 +286,8 @@ button {
 
 .row input[type='range'] {
   flex: 1;
+  /* A range input's built-in minimum width would otherwise push it out of the panel. */
+  min-width: 0;
 }
 
 .field {
@@ -335,6 +337,10 @@ input[type='password'] {
 
 .btn:hover:not(:disabled) {
   border-color: var(--accent-dim);
+}
+
+.btn-icon {
+  padding: 8px 10px;
 }
 
 .btn:disabled {
@@ -449,9 +455,9 @@ input[type='password'] {
 
 .ptz-pad {
   display: grid;
-  grid-template-columns: repeat(3, 56px);
-  grid-template-rows: repeat(3, 56px);
-  gap: 6px;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(3, 40px);
+  gap: 4px;
   justify-content: center;
   touch-action: none;
   user-select: none;
@@ -459,7 +465,7 @@ input[type='password'] {
 }
 
 .ptz-btn {
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-sunken);
   cursor: pointer;
@@ -488,7 +494,7 @@ input[type='password'] {
 .ptz-center {
   grid-area: 2 / 2;
   border-radius: 50%;
-  margin: 18px;
+  margin: 14px;
   background: var(--border);
 }
 .ptz-right {
@@ -529,4 +535,23 @@ input[type='password'] {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ---------- icons ---------- */
+
+.icon {
+  flex: none;
+  vertical-align: -0.2em;
+}
+
+.btn,
+.listen-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ptz-btn {
+  display: grid;
+  place-items: center;
 }

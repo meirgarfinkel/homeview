@@ -79,6 +79,18 @@ export class CameraSource extends EventEmitter<CameraSourceEvents> {
     return this._state;
   }
 
+  /** Switch to a new camera address, reconnecting right away if streaming. */
+  setHost(host: string): void {
+    if (host === this.opts.host) return;
+    this.opts.host = host;
+    if (!this.running) return;
+    clearTimeout(this.retryTimer);
+    this.abort?.abort();
+    this.current?.close();
+    this.attempt = 0;
+    this.retryTimer = setTimeout(() => void this.connect(), 0);
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;

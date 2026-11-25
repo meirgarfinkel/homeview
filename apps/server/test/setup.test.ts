@@ -85,8 +85,23 @@ describe('camera setup without the app', () => {
       encryption: 'AES',
     });
 
-    const result = await finishSetup(login.client, { alias: 'nursery', bindAccount: ACCOUNT });
-    expect(result).toEqual({ aliasSet: true, bound: true, bindPassword: 'plain' });
+    expect(fake.osdTime).toBe('off');
+    const result = await finishSetup(login.client, {
+      alias: 'nursery',
+      bindAccount: ACCOUNT,
+      timeZone: { timezone: 'UTC+9:00', area: 'Asia/Tokyo' },
+      showTime: true,
+    });
+    expect(result).toEqual({
+      aliasSet: true,
+      bound: true,
+      bindPassword: 'plain',
+      timeZoneSet: true,
+      timeShown: true,
+      warnings: [],
+    });
+    expect(fake.timeZone).toEqual({ timezone: 'UTC+9:00', area: 'Asia/Tokyo' });
+    expect(fake.osdTime).toBe('on');
     expect(fake.alias).toBe('nursery');
     expect(fake.onboardingStatus).toBe('done');
     expect(fake.bound).toBe(true);
@@ -106,10 +121,24 @@ describe('camera setup without the app', () => {
 
   it('can finish local-only, without linking an account', async () => {
     const login = (await findWorkingLogin(target(), defaultSetupLogins()))!;
-    expect(await finishSetup(login.client, {})).toEqual({ aliasSet: false, bound: false });
+    expect(await finishSetup(login.client, {})).toEqual({
+      aliasSet: false,
+      bound: false,
+      warnings: [],
+    });
     expect(fake.bound).toBe(false);
     expect(fake.onboardingStatus).toBe('done');
     expect(fake.commands.some((c) => c.method === 'set_bind')).toBe(false);
+  });
+
+  it('skips a time zone the camera refuses without failing setup', async () => {
+    const login = (await findWorkingLogin(target(), defaultSetupLogins()))!;
+    const result = await finishSetup(login.client, {
+      timeZone: { timezone: 'bogus', area: 'Nowhere' },
+    });
+    expect(result.timeZoneSet).toBe(false);
+    expect(result.warnings).toHaveLength(1);
+    expect(fake.onboardingStatus).toBe('done');
   });
 
   it('surfaces a rejected account link as an error', async () => {

@@ -1,5 +1,6 @@
 import { CameraCredentials, encodePassword, type PasswordEncodingSetting } from './credentials.js';
 import { CameraAuthError, LinkieClient, LinkieError } from './linkieClient.js';
+import type { CameraTimeZone } from './timeZone.js';
 import type { CameraTlsConfig } from './tls.js';
 import type { Logger } from '../logger.js';
 
@@ -233,6 +234,10 @@ export async function joinWifi(client: LinkieClient, wifi: HomeWifi): Promise<Jo
 
 export interface FinishOptions {
   alias?: string;
+  /** Set the camera's clock to this zone (the Kasa app does this during setup). */
+  timeZone?: CameraTimeZone;
+  /** Turn on the time stamped on the video (off after a factory reset). */
+  showTime?: boolean;
   /** Link to this TP-Link account. Omit for local-only use. */
   bindAccount?: { username: string; password: string };
 }
@@ -242,6 +247,10 @@ export interface FinishResult {
   bound: boolean;
   /** How the account password was sent to `set_bind`, when linking worked. */
   bindPassword?: 'plain' | 'md5';
+  timeZoneSet?: boolean;
+  timeShown?: boolean;
+  /** Optional settings the camera refused; setup still succeeded. */
+  warnings: string[];
 }
 
 /**
@@ -254,12 +263,37 @@ export async function finishSetup(
   opts: FinishOptions,
 ): Promise<FinishResult> {
   let aliasSet = false;
+  const warnings: string[] = [];
   if (opts.alias) {
     await client.call('system', 'set_alias', { value: opts.alias });
     aliasSet = true;
   }
+  // Nice-to-haves: other models may not support them, so they never fail setup.
+  const optional = async (what: string, fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+      return true;
+    } catch (err) {
+      if (!(err instanceof LinkieError)) throw err;
+      warnings.push(`${what}: ${err.message}`);
+      return false;
+    }
+  };
+  const extras: Pick<FinishResult, 'timeZoneSet' | 'timeShown'> = {};
+  if (opts.timeZone) {
+    const tz = opts.timeZone;
+    extras.timeZoneSet = await optional('time zone', () =>
+      client.call('dateTime', 'set_time_zone', { ...tz }),
+    );
+  }
+  if (opts.showTime) {
+    extras.timeShown = await optional('on-screen time', () =>
+      client.call('OSD', 'set_time_is_enable', { value: 'on' }),
+    );
+  }
   await client.call('system', 'set_onboarding_status', { value: 'done' });
-  if (!opts.bindAccount) return { aliasSet, bound: false };
+  const base = { aliasSet, ...extras, warnings };
+  if (!opts.bindAccount) return { ...base, bound: false };
 
   // A KC410S takes the password as typed. MD5 hex (the camera's own login
   // format) is kept as a fallback for other models.
@@ -271,7 +305,7 @@ export async function finishSetup(
   ] as const) {
     try {
       await client.call('cloud', 'set_bind', { username, password: value });
-      return { aliasSet, bound: true, bindPassword: form };
+      return { ...base, bound: true, bindPassword: form };
     } catch (err) {
       if (!(err instanceof LinkieError)) throw err;
       lastError = err;

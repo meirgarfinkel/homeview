@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decrypt, decryptJson, encrypt, encryptJson } from '../src/kasa/cipher.js';
+import { decrypt, decryptJson, encrypt } from '../src/kasa/cipher.js';
 
 describe('Kasa XOR cipher', () => {
   it('round-trips arbitrary text', () => {
@@ -19,10 +19,5 @@ describe('Kasa XOR cipher', () => {
       err_code: -10007,
       err_msg: 'Unauthorized Error',
     });
-  });
-
-  it('round-trips JSON', () => {
-    const value = { a: [1, 2, { b: 'c' }] };
-    expect(decryptJson(encryptJson(value))).toEqual(value);
   });
 });

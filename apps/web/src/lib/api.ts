@@ -2,6 +2,7 @@ import type {
   ApiError,
   CameraInfo,
   PtzDirection,
+  PtzMoveMode,
   PtzPreset,
   SessionResponse,
   StatusResponse,
@@ -49,7 +50,8 @@ export const api = {
   logout: () => post('/api/logout'),
   status: () => request<StatusResponse>('/api/status'),
   camera: () => request<CameraInfo>('/api/camera'),
-  ptzMove: (direction: PtzDirection) => post('/api/ptz/move', { direction }),
+  ptzMove: (direction: PtzDirection, mode: PtzMoveMode) =>
+    post('/api/ptz/move', { direction, mode }),
   ptzStop: () => post('/api/ptz/stop'),
   presets: () => request<PtzPreset[]>('/api/ptz/presets'),
   goToPreset: (index: number) => post(`/api/ptz/presets/${index}/go`),

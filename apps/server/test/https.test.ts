@@ -139,10 +139,17 @@ describe('HTTPS listener with HTTP redirect', () => {
     expect(res).toContain(`Location: https://192.168.1.20:${port}/some/page?x=1\r\n`);
   });
 
-  it('does not reflect a malicious Host header', async () => {
-    const res = await raw(
-      'GET / HTTP/1.1\r\nHost: evil.com\r\nX: 1\r\n\r\n'.replace('evil.com', 'evil.com\u0000x'),
-    );
-    expect(res).toMatch(/^HTTP\/1\.1 400/);
+  it.each(['evil.com/"><script>', 'a b', 'x\u0000y', ''])(
+    'refuses to echo a Host header that is not a plain hostname (%j)',
+    async (host) => {
+      const res = await raw(`GET / HTTP/1.1\r\nHost: ${host}\r\n\r\n`);
+      expect(res).toMatch(/^HTTP\/1\.1 400/);
+      expect(res).not.toContain('Location');
+    },
+  );
+
+  it('never redirects to a host taken from the request line', async () => {
+    const res = await raw('GET http://evil.com/x HTTP/1.1\r\nHost: 192.168.1.20\r\n\r\n');
+    expect(res).toContain(`Location: https://192.168.1.20:${port}/\r\n`);
   });
 });

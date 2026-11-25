@@ -6,7 +6,9 @@ Spot Pan Tilt (KC410S) as a baby monitor.
 
 - Live video in the browser (H.264, no plugins, no transcoding)
 - Live audio with a level meter and a "sound detected" alert
-- Pan/tilt with press-and-hold buttons or arrow keys, plus saved presets
+- Pan/tilt: tap to nudge, hold to keep moving (buttons or arrow keys), presets
+- Finds the camera by itself and follows it if its IP address changes
+- Keeps the camera's clock in this computer's time zone
 - Fullscreen, picture-in-picture and snapshots
 - One camera connection shared by every open screen
 - Local network only, HTTPS, password protected
@@ -91,8 +93,10 @@ computer, no phone needed. It:
 3. rejoins your home Wi-Fi, finds the camera there, names it, and links it to
    your TP-Link account. You can choose local-only instead, which never links
    it to an account;
-4. offers to save the camera's address (and, for local-only, its login) to
-   `.env`.
+4. sets the camera's clock to this computer's time zone and turns on the
+   time shown on the video, as the Kasa app does;
+5. for local-only, offers to save the camera's login to `.env`. No address is
+   saved: the monitor finds the camera by itself.
 
 You need a TP-Link ID to link an account; one can be created in a browser at
 [myproducts.tp-link.com](https://myproducts.tp-link.com). Local-only needs no
@@ -117,14 +121,15 @@ list. The important ones:
 | `KASA_USERNAME`          | (required)         | Kasa account email                                               |
 | `KASA_PASSWORD`          | (required)         | Kasa account password                                            |
 | `VIEWER_PASSWORD`        | (required)         | Password for the web page, 8+ characters                         |
-| `KASA_HOST`              | discovered         | Camera IP, if discovery doesn't find it                          |
+| `KASA_HOST`              | discovered         | Pin the camera IP (normally found and followed automatically)    |
 | `KASA_ALIAS`             |                    | Which camera to use when there are several                       |
 | `KASA_STREAM_RESOLUTION` | camera default     | `2560x1440`, `2304x1296`, `1080P`, `720P` or `360P`              |
 | `PORT`                   | `8090`             | Web server port                                                  |
 | `HTTPS`                  | `true`             | Serve HTTPS with a self-signed or supplied certificate           |
 | `TLS_CERT_FILE`          |                    | Use your own certificate (e.g. from mkcert), with `TLS_KEY_FILE` |
 | `ALLOWED_CIDRS`          | this machine's LAN | Client networks allowed to connect                               |
-| `PTZ_SPEED`              | `8`                | Pan/tilt speed, 1–10                                             |
+| `PTZ_STEP_SPEED`         | `2`                | Pan/tilt speed for a tap, 1–10                                   |
+| `KASA_TIMEZONE`          | this computer's    | Time zone for the camera's clock and on-video timestamp          |
 
 ## Security
 

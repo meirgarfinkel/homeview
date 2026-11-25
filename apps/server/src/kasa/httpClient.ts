@@ -24,6 +24,8 @@ export interface CameraRequest {
   /** Ignore Content-Length and read until the connection closes. */
   ignoreContentLength?: boolean;
   signal?: AbortSignal;
+  /** An already connected socket from connectCamera(), instead of a new one. */
+  socket?: TLSSocket;
 }
 
 export interface CameraResponse {
@@ -55,13 +57,16 @@ export function cameraRequest(req: CameraRequest): Promise<CameraResponse> {
       return;
     }
 
-    const socket = tls.connect({
-      ...cameraTlsOptions,
-      host: req.host,
-      port: req.port,
-      // SNI must not be an IP address; the camera doesn't need it anyway.
-      servername: '',
-    });
+    const reused = req.socket;
+    const socket =
+      reused ??
+      tls.connect({
+        ...cameraTlsOptions,
+        host: req.host,
+        port: req.port,
+        // SNI must not be an IP address; the camera doesn't need it anyway.
+        servername: '',
+      });
 
     let settled = false;
     const fail = (err: Error) => {
@@ -92,7 +97,7 @@ export function cameraRequest(req: CameraRequest): Promise<CameraResponse> {
     socket.on('error', onError);
     socket.on('close', onClose);
 
-    socket.once('secureConnect', () => {
+    const send = () => {
       try {
         assertPinnedCertificate(socket, req.tls ?? {});
       } catch (err) {
@@ -115,7 +120,16 @@ export function cameraRequest(req: CameraRequest): Promise<CameraResponse> {
         '\r\n';
       socket.write(head);
       if (req.body) socket.write(req.body);
-    });
+    };
+    if (reused) {
+      if (reused.destroyed || !reused.writable) {
+        fail(new CameraHttpError('Spare connection already closed', 'network'));
+      } else {
+        send();
+      }
+    } else {
+      socket.once('secureConnect', send);
+    }
 
     let headBuf: Buffer = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
@@ -228,4 +242,42 @@ export async function readAll(body: Readable, maxBytes: number): Promise<Buffer>
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
+}
+
+/**
+ * Open a TLS connection to the camera and finish the handshake, without
+ * sending anything. The camera's handshake is slow (~0.5 s), so a socket
+ * opened ahead of time lets an urgent request (stopping the motor) go out
+ * at once. The camera keeps such idle connections open for at least 10 s.
+ */
+export function connectCamera(
+  host: string,
+  port: number,
+  tlsConfig: CameraTlsConfig = {},
+  timeoutMs = 8000,
+): Promise<TLSSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({ ...cameraTlsOptions, host, port, servername: '' });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new CameraHttpError('TLS handshake timed out', 'timeout'));
+    }, timeoutMs);
+    socket.once('error', (err) => {
+      clearTimeout(timer);
+      reject(new CameraHttpError(err.message, 'network'));
+    });
+    socket.once('secureConnect', () => {
+      clearTimeout(timer);
+      try {
+        assertPinnedCertificate(socket, tlsConfig);
+      } catch (err) {
+        socket.destroy();
+        reject(err as Error);
+        return;
+      }
+      socket.removeAllListeners('error');
+      socket.on('error', () => socket.destroy());
+      resolve(socket);
+    });
+  });
 }

@@ -91,19 +91,34 @@ Modules present in the app: `OSD`, `audio`, `battery`, `camSchedule`, `cloud`,
 
 ### Pan/tilt: `smartlife.cam.ipcamera.ptz`
 
-| Method                  | Args                                                                                                                            | Notes                                     |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `set_move`              | `{direction, speed}`                                                                                                            | Starts continuous motion until `set_stop` |
-| `set_stop`              | `{}`                                                                                                                            |                                           |
-| `get_position`          | `{}`                                                                                                                            | Returns `{x, y}`                          |
-| `set_target`            | `{x, y}`                                                                                                                        | Absolute move (not used here)             |
-| `get_all_preset`        | `{}`                                                                                                                            | `{maximum, preset_attr:[{index, name}]}`  |
-| `set_run_to_preset`     | `{index}`                                                                                                                       | `index` is an integer                     |
-| `get_ptz_rectify_state` | `{}`                                                                                                                            | `{rectify_status}`                        |
-| also                    | `add_preset`, `edit_preset`, `delete_preset`, `get/set_patrol_is_enable`, `get/set_ptz_tracking_is_enable`, `set_motor_rectify` |                                           |
+| Method                  | Args                                                                                                                            | Notes                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `set_move`              | `{direction, speed}`                                                                                                            | One fixed step (see below)               |
+| `set_stop`              | `{}`                                                                                                                            | Halts any motion at once                 |
+| `get_position`          | `{}`                                                                                                                            | Returns `{x, y}`                         |
+| `set_target`            | `{x, y}`                                                                                                                        | Smooth absolute move                     |
+| `get_all_preset`        | `{}`                                                                                                                            | `{maximum, preset_attr:[{index, name}]}` |
+| `set_run_to_preset`     | `{index}`                                                                                                                       | `index` is an integer                    |
+| `get_ptz_rectify_state` | `{}`                                                                                                                            | `{rectify_status}`                       |
+| also                    | `add_preset`, `edit_preset`, `delete_preset`, `get/set_patrol_is_enable`, `get/set_ptz_tracking_is_enable`, `set_motor_rectify` |                                          |
 
 - `direction`: `top`, `bottom`, `left`, `right`, `top left`, `top right`,
   `bottom left`, `bottom right`.
+- Each `set_move` is **one fixed step**, not continuous motion: about 55
+  position units at speed 2 and 100 at speed 6 on a KC410S. Steps sent while
+  one is running are queued; `set_stop` clears the queue.
+- `set_target` glides smoothly at a fixed ~450 units/s (a `speed` argument
+  is accepted and ignored). A target past the edge is clamped to the end of
+  travel, which on a KC410S is x ±1934 and y ±387. This monitor holds a
+  direction by targeting the far edge, and releases with `set_stop`.
+- `set_stop` takes effect immediately, mid-step or mid-glide.
+- Timing matters more than it looks. The camera sends `Connection: close`
+  on every reply, so each request needs a new TLS handshake (~0.5 s), and
+  while a handshake is running the camera answers nothing else for about
+  1.2 s. A connection opened ahead of time and left idle (the camera keeps
+  them for at least 30 s) answers in 20–60 ms. So the monitor keeps a few
+  pre-connected sockets while pan/tilt is in use, holds one back for
+  `set_stop`, and replaces used ones only when nothing is moving.
 - `speed` is an integer **1–10**. 11 and above return `err_code -41203`
   ("parameter value error"). Omitting `speed` returns `-41202` ("parameter
   format error").
@@ -160,6 +175,20 @@ video, and models other than the KC410S.
 `pnpm setup-camera` implements this flow. For other models it still tries a
 few fallbacks (another `key_index`, MD5 for `set_bind`) and reports which
 worked.
+
+## Clock and on-screen time
+
+| Module (`smartlife.cam.ipcamera.*`) | Method                                     | Fields                                   |
+| ----------------------------------- | ------------------------------------------ | ---------------------------------------- |
+| `dateTime`                          | `get_status`, `get_time`, `get_time_zone`  | → `epoch_sec`, `timezone`, `area`        |
+| `dateTime`                          | `set_time_zone`                            | `timezone` (`"UTC+2:00"`), `area` (IANA) |
+| `OSD`                               | `get_time_is_enable`, `set_time_is_enable` | `value`: `"on"` / `"off"`                |
+| `OSD`                               | `get_logo_is_enable`, `set_logo_is_enable` | `value`: `"on"` / `"off"`                |
+
+All verified on a KC410S. After a factory reset its time zone is
+`UTC+0:00` / `GMT` and the on-screen time is `off`. The clock itself is set
+over NTP. `timezone` is a fixed offset, so the monitor re-sends it when
+daylight saving changes.
 
 ## Live stream: `GET https://<cam>:19443/https/stream/mixed`
 

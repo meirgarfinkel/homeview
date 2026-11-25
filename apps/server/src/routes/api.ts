@@ -1,8 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   PTZ_DIRECTIONS,
+  PTZ_MOVE_MODES,
   type ApiError,
   type PtzDirection,
+  type PtzMoveMode,
   type SessionResponse,
   type StatusResponse,
 } from '@kasa/shared';
@@ -102,7 +104,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
     }
   });
 
-  app.post<{ Body: { direction: PtzDirection } }>(
+  app.post<{ Body: { direction: PtzDirection; mode?: PtzMoveMode } }>(
     '/api/ptz/move',
     {
       schema: {
@@ -110,13 +112,17 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
           type: 'object',
           required: ['direction'],
           additionalProperties: false,
-          properties: { direction: { type: 'string', enum: [...PTZ_DIRECTIONS] } },
+          properties: {
+            direction: { type: 'string', enum: [...PTZ_DIRECTIONS] },
+            mode: { type: 'string', enum: [...PTZ_MOVE_MODES] },
+          },
         },
       },
     },
     async (req, reply) => {
       try {
-        await camera.ptz.move(req.body.direction);
+        const { direction, mode = 'step' } = req.body;
+        await (mode === 'hold' ? camera.ptz.hold(direction) : camera.ptz.step(direction));
         return reply.code(204).send();
       } catch (err) {
         return sendError(reply, err);
