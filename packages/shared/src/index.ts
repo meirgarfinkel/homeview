@@ -101,6 +101,18 @@ export interface ApiError {
   message: string;
 }
 
+/** Reply to GET /api/settings. It never holds a password. */
+export interface SettingsResponse {
+  camera: { username: string; alias?: string; localOnly: boolean } | null;
+  /** True when the request comes from this computer. */
+  local: boolean;
+  desktop: boolean;
+  /** Start at login. Null when this server can't change it. */
+  autostart: boolean | null;
+  /** Settings that environment variables set, which the page shows as read-only. */
+  managedByEnv: ('viewerPassword' | 'camera')[];
+}
+
 /** A camera found during setup. */
 export interface SetupCamera {
   alias: string;

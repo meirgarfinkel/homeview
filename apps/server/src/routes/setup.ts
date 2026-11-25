@@ -159,7 +159,31 @@ const passwordSchema = {
   },
 } as const;
 
-const existingSchema = {
+/** Rebuild with the new settings once this reply has gone out (or the client left). */
+export function reloadAfterReply(
+  deps: { reload?: () => Promise<void> },
+  reply: FastifyReply,
+): void {
+  reply.raw.once('close', () => {
+    deps
+      .reload?.()
+      .catch((err: Error) =>
+        reply.log.error({ err: err.message }, 'Could not apply the new settings'),
+      );
+  });
+}
+
+/**
+ * A session cookie for a new password hash. The rebuilt app uses the same
+ * secret and binds sessions to the same hash, so the cookie stays valid.
+ */
+export function cookieForHash(config: Config, req: FastifyRequest, hash: string): string {
+  const secret = config.sessionSecret ?? loadOrCreateSecret(config.dataDir, 'session-secret');
+  const { token, expires } = new SessionManager(passwordCheckFromHash(hash), secret).issue();
+  return sessionCookie(token, expires, req.protocol === 'https');
+}
+
+export const existingCameraSchema = {
   body: {
     type: 'object',
     required: ['username', 'password'],
@@ -172,33 +196,60 @@ const existingSchema = {
   },
 } as const;
 
-function toSetupCamera(d: DiscoveredDevice): SetupCamera {
+export type CameraLoginResult =
+  | { fail: { status: number; body: ApiError } }
+  | { choose: SetupCamera[] }
+  | { chosen: DiscoveredDevice };
+
+/**
+ * Find the camera on the network and check that this login works on it.
+ * Shared by first-run setup and the settings page.
+ */
+export async function checkCameraLogin(
+  req: FastifyRequest,
+  config: Config,
+  login: { username: string; password: string; alias?: string | undefined },
+): Promise<CameraLoginResult> {
+  const { username, password, alias } = login;
+  const cam = config.camera;
+
+  let cameras = await discoverCameras(cam);
+  if (alias) cameras = cameras.filter((c) => c.alias.toLowerCase() === alias.toLowerCase());
+  if (cameras.length === 0) return { fail: { status: 404, body: noCamera } };
+
+  const outcomes = await Promise.all(
+    cameras.map(async (device) => {
+      try {
+        const found = await findWorkingLogin(
+          { host: device.host, apiPort: cam.apiPort, tls: { pinnedSha256: cam.certSha256 } },
+          [{ label: 'your Kasa account', username, password, encoding: cam.passwordEncoding }],
+        );
+        found?.client.close();
+        return found ? 'ok' : 'rejected';
+      } catch (err) {
+        req.log.warn({ host: device.host, err: (err as Error).message }, 'Camera login failed');
+        return 'unreachable';
+      }
+    }),
+  );
+  const working = cameras.filter((_, i) => outcomes[i] === 'ok');
+  if (working.length === 0) {
+    return outcomes.includes('rejected')
+      ? { fail: { status: 401, body: wrongLogin } }
+      : { fail: { status: 502, body: unreachable } };
+  }
+  if (working.length > 1 && !alias) return { choose: working.map(toSetupCamera) };
+  return { chosen: working[0]! };
+}
+
+export function toSetupCamera(d: DiscoveredDevice): SetupCamera {
   return { alias: d.alias, model: d.model, host: d.host };
 }
 
 export async function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps): Promise<void> {
   const { config, settings } = deps;
 
-  /** Rebuild with the new settings once this reply has gone out (or the client left). */
-  const reloadAfterReply = (reply: FastifyReply) => {
-    reply.raw.once('close', () => {
-      deps
-        .reload?.()
-        .catch((err: Error) =>
-          reply.log.error({ err: err.message }, 'Could not apply the new settings'),
-        );
-    });
-  };
-
-  /**
-   * A session cookie for the new password. The rebuilt app uses the same
-   * secret and binds sessions to the same hash, so the cookie stays valid.
-   */
-  const cookieFor = (req: FastifyRequest, hash: string): string => {
-    const secret = config.sessionSecret ?? loadOrCreateSecret(config.dataDir, 'session-secret');
-    const { token, expires } = new SessionManager(passwordCheckFromHash(hash), secret).issue();
-    return sessionCookie(token, expires, req.protocol === 'https');
-  };
+  const reloadAfter = (reply: FastifyReply) => reloadAfterReply(deps, reply);
 
   const savePassword = async (
     req: FastifyRequest<{ Body: { password: string } }>,
@@ -209,8 +260,11 @@ export async function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps)
     if (password.length < MIN_VIEWER_PASSWORD) return reply.code(400).send(tooShort);
     const hash = await hashPassword(password);
     settings.save({ ...settings.load(), viewerPasswordHash: hash });
-    reloadAfterReply(reply);
-    return reply.header('Set-Cookie', cookieFor(req, hash)).code(204).send();
+    reloadAfter(reply);
+    return reply
+      .header('Set-Cookie', cookieForHash(config, req, hash))
+      .code(204)
+      .send();
   };
 
   app.post<{ Body: { password: string } }>(
@@ -231,48 +285,23 @@ export async function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps)
 
   app.post<{ Body: { username: string; password: string; alias?: string } }>(
     '/api/setup/existing-camera',
-    { schema: existingSchema },
+    { schema: existingCameraSchema },
     async (req, reply) => {
       if (config.setupComplete) return reply.code(409).send(alreadySetUp);
-      const { username, password, alias } = req.body;
-      const cam = config.camera;
-
-      let cameras = await discoverCameras(cam);
-      if (alias) cameras = cameras.filter((c) => c.alias.toLowerCase() === alias.toLowerCase());
-      if (cameras.length === 0) return reply.code(404).send(noCamera);
-
-      const outcomes = await Promise.all(
-        cameras.map(async (device) => {
-          try {
-            const login = await findWorkingLogin(
-              { host: device.host, apiPort: cam.apiPort, tls: { pinnedSha256: cam.certSha256 } },
-              [{ label: 'your Kasa account', username, password, encoding: cam.passwordEncoding }],
-            );
-            login?.client.close();
-            return login ? 'ok' : 'rejected';
-          } catch (err) {
-            req.log.warn({ host: device.host, err: (err as Error).message }, 'Camera login failed');
-            return 'unreachable';
-          }
-        }),
-      );
-      const working = cameras.filter((_, i) => outcomes[i] === 'ok');
-      if (working.length === 0) {
-        return outcomes.includes('rejected')
-          ? reply.code(401).send(wrongLogin)
-          : reply.code(502).send(unreachable);
-      }
-      if (working.length > 1 && !alias) {
-        const result: SetupExistingResult = { choose: working.map(toSetupCamera) };
+      const { username, password } = req.body;
+      const found = await checkCameraLogin(req, config, req.body);
+      if ('fail' in found) return reply.code(found.fail.status).send(found.fail.body);
+      if ('choose' in found) {
+        const result: SetupExistingResult = { choose: found.choose };
         return result;
       }
 
-      const chosen = working[0]!;
+      const chosen = found.chosen;
       settings.save({
         ...settings.load(),
         camera: { username, password, alias: chosen.alias, localOnly: false },
       });
-      reloadAfterReply(reply);
+      reloadAfter(reply);
       const result: SetupExistingResult = { saved: toSetupCamera(chosen) };
       return result;
     },

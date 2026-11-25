@@ -103,6 +103,8 @@ export interface Config {
   setupComplete: boolean;
   /** True when running inside the desktop app. */
   desktop: boolean;
+  /** Which settings the environment sets, so settings.json can't change them. */
+  fromEnv: { viewerPassword: boolean; camera: boolean };
   sessionSecret: string | undefined;
   staticDir: string;
   dataDir: string;
@@ -195,6 +197,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
     allowNoPassword: e.ALLOW_NO_PASSWORD,
     setupComplete: Boolean(viewer || e.ALLOW_NO_PASSWORD) && Boolean(username && password),
     desktop: false,
+    fromEnv: { viewerPassword: Boolean(e.VIEWER_PASSWORD), camera: loginFromEnv },
     sessionSecret: e.SESSION_SECRET,
     staticDir: e.STATIC_DIR ? path.resolve(e.STATIC_DIR) : defaultStaticDir,
     dataDir: resolveDataDir(env),

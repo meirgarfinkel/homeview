@@ -10,6 +10,7 @@ import type { LiveHub } from './media/liveHub.js';
 import { loggerOptions, type Logger } from './logger.js';
 import { notSetUp, registerApiRoutes } from './routes/api.js';
 import { registerLiveRoute } from './routes/live.js';
+import { registerSettingsRoutes } from './routes/settings.js';
 import { registerSetupRoutes, type OnboardingSlot, type SetupDeps } from './routes/setup.js';
 import type { WifiSwitcher } from './setup/wifiSwitcher.js';
 import {
@@ -193,6 +194,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       onboarding: deps.onboarding ?? {},
       ...(deps.createSwitcher ? { createSwitcher: deps.createSwitcher } : {}),
       ...(deps.onboardingOverrides ? { onboardingOverrides: deps.onboardingOverrides } : {}),
+    });
+  }
+  if (deps.settings) {
+    await registerSettingsRoutes(app, {
+      config,
+      settings: deps.settings,
+      ...(deps.reload ? { reload: deps.reload } : {}),
+      ...(deps.hooks ? { hooks: deps.hooks } : {}),
+      desktop: deps.desktop ?? config.desktop,
     });
   }
   if (deps.hub) await registerLiveRoute(app, deps.hub);
