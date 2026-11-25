@@ -3,6 +3,7 @@ import https from 'node:https';
 import net from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import { isLoopback } from './security/network.js';
+import { markRemote } from './security/remoteRequest.js';
 
 /**
  * Listen on one port, and keep it and its connections open while the app
@@ -54,6 +55,8 @@ interface FrontOptions {
   allowClient?: (ip: string | undefined) => boolean;
   /** Who gets plain HTTP. Decided from the TCP peer address, never a header. */
   isLocalClient?: (ip: string | undefined) => boolean;
+  /** Every request on this listener came through the tunnel helper. */
+  remote?: boolean;
 }
 
 export async function listenHttpsWithRedirect(
@@ -70,10 +73,13 @@ export async function listenHttpsWithRedirect(
   return listenFront(app, opts);
 }
 
-/** Plain HTTP, with the same close and swap behaviour as the HTTPS listener. */
+/**
+ * Plain HTTP, with the same close and swap behaviour as the HTTPS listener.
+ * With remote set, every request and upgrade on it is marked as remote.
+ */
 export async function listenHttp(
   app: FastifyInstance,
-  opts: { host: string; port: number },
+  opts: { host: string; port: number; remote?: boolean },
 ): Promise<DualListener> {
   return listenFront(app, opts);
 }
@@ -89,6 +95,7 @@ async function listenFront(app: FastifyInstance, opts: FrontOptions): Promise<Du
   const open = new Map<FastifyInstance, number>();
   const finished = new Map<FastifyInstance, () => void>();
   const dispatch = (req: http.IncomingMessage, res: http.ServerResponse) => {
+    if (opts.remote) markRemote(req);
     const target = current;
     open.set(target, (open.get(target) ?? 0) + 1);
     res.once('close', () => {
@@ -146,6 +153,7 @@ async function listenFront(app: FastifyInstance, opts: FrontOptions): Promise<Du
   // The live WebSocket's upgrade handler is on app.server. Upgraded sockets
   // belong to that app's WebSocket server, which closes them with the app.
   function upgrade(req: http.IncomingMessage, socket: net.Socket, head: Buffer) {
+    if (opts.remote) markRemote(req);
     busy.add(socket);
     current.server.emit('upgrade', req, socket, head);
   }

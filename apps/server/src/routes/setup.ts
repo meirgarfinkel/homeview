@@ -12,7 +12,7 @@ import type { DiscoveredDevice } from '../kasa/discovery.js';
 import { findWorkingLogin } from '../kasa/setup.js';
 import { Onboarding, OnboardingStateError, type OnboardingOptions } from '../setup/onboarding.js';
 import { createWifiSwitcher, type WifiSwitcher } from '../setup/wifiSwitcher.js';
-import { isLoopback } from '../security/network.js';
+import { isLocalRequest, secureCookies } from '../security/remoteRequest.js';
 import { loadOrCreateSecret } from '../security/dataDir.js';
 import { hashPassword } from '../security/passwordHash.js';
 import { passwordCheckFromHash, sessionCookie, SessionManager } from '../security/session.js';
@@ -211,7 +211,7 @@ export async function saveViewerPassword(
 export function cookieForHash(config: Config, req: FastifyRequest, hash: string): string {
   const secret = config.sessionSecret ?? loadOrCreateSecret(config.dataDir, 'session-secret');
   const { token, expires } = new SessionManager(passwordCheckFromHash(hash), secret).issue();
-  return sessionCookie(token, expires, req.protocol === 'https');
+  return sessionCookie(token, expires, secureCookies(req));
 }
 
 export const existingCameraSchema = {
@@ -344,7 +344,7 @@ function registerOnboardingRoutes(app: FastifyInstance, deps: SetupDeps): void {
 
   /** This computer only, and before setup is complete or with a session. */
   const allowed = (req: FastifyRequest, reply: FastifyReply): boolean => {
-    if (!isLoopback(req.ip)) {
+    if (!isLocalRequest(req)) {
       void reply.code(403).send({
         error: 'local-only',
         message: 'Only the computer running Kasa Home can do this.',

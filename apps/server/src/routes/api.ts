@@ -11,7 +11,7 @@ import {
 } from '@kasa/shared';
 import type { AppDeps, CameraService } from '../app.js';
 import type { LiveHub } from '../media/liveHub.js';
-import { isLoopback } from '../security/network.js';
+import { clientIp, isLocalRequest, isRemote, secureCookies } from '../security/remoteRequest.js';
 import { CameraAuthError, LinkieError } from '../kasa/linkieClient.js';
 import { CameraHttpError } from '../kasa/httpClient.js';
 import { PtzUnsupportedError } from '../kasa/ptz.js';
@@ -60,7 +60,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
   app.get('/api/health', async () => ({ ok: true }));
 
   app.get('/api/session', async (req): Promise<SessionResponse> => {
-    const local = isLoopback(req.ip);
+    const local = isLocalRequest(req);
     // Only this computer gets the phone address. req.ip is the socket peer (trustProxy is off).
     const lanUrl = local ? deps.lanUrl?.() : undefined;
     return {
@@ -69,6 +69,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
       setupComplete: deps.config.setupComplete,
       local,
       desktop: deps.desktop ?? deps.config.desktop,
+      ...(isRemote(req) ? { remote: true } : {}),
       ...(lanUrl ? { lanUrl } : {}),
     };
   });
@@ -88,19 +89,20 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
     async (req, reply) => {
       if (!sessions)
         return deps.openAccess ? reply.code(204).send() : reply.code(503).send(notSetUp);
-      if (!limiter.hit(req.ip)) {
+      const ip = clientIp(req);
+      if (!limiter.hit(ip)) {
         return reply
           .code(429)
           .send({ error: 'rate_limited', message: 'Too many attempts. Try again later.' });
       }
       if (!(await sessions.checkPassword(req.body.password))) {
-        req.log.warn({ ip: req.ip }, 'Failed viewer login');
+        req.log.warn({ ip }, 'Failed viewer login');
         return reply.code(401).send({ error: 'bad_password', message: 'Wrong password' });
       }
-      limiter.reset(req.ip);
+      limiter.reset(ip);
       const { token, expires } = sessions.issue();
       return reply
-        .header('Set-Cookie', sessionCookie(token, expires, req.protocol === 'https'))
+        .header('Set-Cookie', sessionCookie(token, expires, secureCookies(req)))
         .code(204)
         .send();
     },
@@ -108,7 +110,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
 
   app.post('/api/logout', async (req, reply) =>
     reply
-      .header('Set-Cookie', clearedSessionCookie(req.protocol === 'https'))
+      .header('Set-Cookie', clearedSessionCookie(secureCookies(req)))
       .code(204)
       .send(),
   );

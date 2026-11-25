@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiError, SettingsResponse, SetupExistingResult } from '@kasa/shared';
 import type { Config } from '../config.js';
-import { isLoopback } from '../security/network.js';
+import { isLocalRequest } from '../security/remoteRequest.js';
 import { verifyPassword } from '../security/passwordHash.js';
 import type { SettingsStore } from '../settings/store.js';
 import type { ServerHooks } from '../app.js';
@@ -93,7 +93,7 @@ export async function registerSettingsRoutes(
       : null;
     return {
       camera,
-      local: isLoopback(req.ip),
+      local: isLocalRequest(req),
       desktop: deps.desktop,
       autostart: hooks?.getAutostart ? hooks.getAutostart() : null,
       managedByEnv: [
@@ -151,7 +151,7 @@ export async function registerSettingsRoutes(
 
   /** This computer only, and only where the desktop app gave us the hook. */
   const appOnly = (req: FastifyRequest, reply: FastifyReply, hook: unknown): boolean => {
-    if (!isLoopback(req.ip)) {
+    if (!isLocalRequest(req)) {
       void reply.code(403).send(localOnly);
       return false;
     }
