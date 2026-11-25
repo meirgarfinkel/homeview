@@ -4,7 +4,7 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { CameraInfo } from '@kasa/shared';
-import type { Config } from './config.js';
+import { viewerCheck, type Config } from './config.js';
 import type { PtzController } from './kasa/ptz.js';
 import type { LiveHub } from './media/liveHub.js';
 import { loggerOptions, type Logger } from './logger.js';
@@ -16,12 +16,7 @@ import {
   isSameOrigin,
   localNetworkCidrs,
 } from './security/network.js';
-import {
-  parseCookies,
-  passwordCheckFromPlain,
-  SESSION_COOKIE,
-  SessionManager,
-} from './security/session.js';
+import { parseCookies, SESSION_COOKIE, SessionManager } from './security/session.js';
 
 export interface CameraService {
   info(): Promise<CameraInfo>;
@@ -59,9 +54,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const allowIp = createIpAllowlist(clientAllowlist(config));
   const allowHost = createHostAllowlist(config.allowedHosts);
-  const sessions = config.viewerPassword
-    ? new SessionManager(passwordCheckFromPlain(config.viewerPassword), config.sessionSecret)
-    : undefined;
+  const check = viewerCheck(config);
+  const sessions = check ? new SessionManager(check, config.sessionSecret) : undefined;
 
   const isAuthenticated = (req: FastifyRequest) =>
     !sessions || sessions.verify(parseCookies(req.headers.cookie)[SESSION_COOKIE]);

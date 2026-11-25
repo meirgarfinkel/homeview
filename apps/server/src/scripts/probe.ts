@@ -15,6 +15,12 @@ import { loadEnvFile } from '../env.js';
 
 loadEnvFile();
 const config = loadConfig({ ALLOW_NO_PASSWORD: 'true', ...process.env });
+if (!config.camera.username || !config.camera.password) {
+  console.error(
+    'No camera login yet. Set KASA_USERNAME and KASA_PASSWORD in .env, or finish setup in the app.',
+  );
+  process.exit(1);
+}
 const logger = createLogger('warn');
 const step = (label: string, value: unknown) =>
   console.log(`${label.padEnd(20)} ${typeof value === 'string' ? value : JSON.stringify(value)}`);

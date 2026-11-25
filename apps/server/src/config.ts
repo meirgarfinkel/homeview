@@ -2,6 +2,12 @@ import path from 'node:path';
 import { hostTimeZone, isValidTimeZone } from './kasa/timeZone.js';
 import { findRepoRoot } from './env.js';
 import { z } from 'zod';
+import {
+  passwordCheckFromHash,
+  passwordCheckFromPlain,
+  type PasswordCheck,
+} from './security/session.js';
+import type { Settings } from './settings/store.js';
 
 /** Treat empty strings from .env files as "not set". */
 const optionalString = z.preprocess(
@@ -47,8 +53,8 @@ const schema = z.object({
   // Camera
   KASA_HOST: optionalString,
   KASA_ALIAS: optionalString,
-  KASA_USERNAME: z.string().trim().min(1, 'KASA_USERNAME (your Kasa account email) is required'),
-  KASA_PASSWORD: z.string().min(1, 'KASA_PASSWORD (your Kasa account password) is required'),
+  KASA_USERNAME: optionalString,
+  KASA_PASSWORD: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
   KASA_PASSWORD_ENCODING: z.enum(['auto', 'md5', 'base64']).default('auto'),
   KASA_STREAM_PORT: port(19443),
   KASA_API_PORT: port(10443),
@@ -82,7 +88,12 @@ export interface Config {
   logLevel: Env['LOG_LEVEL'];
   allowedCidrs: string[] | undefined;
   allowedHosts: string[];
-  viewerPassword: string | undefined;
+  /** How viewers prove they know the password, or undefined when there is none. */
+  viewer: { kind: 'plain'; password: string } | { kind: 'hash'; hash: string } | undefined;
+  /** True when a viewer password (or ALLOW_NO_PASSWORD) and a camera login both exist. */
+  setupComplete: boolean;
+  /** True when running inside the desktop app. */
+  desktop: boolean;
   sessionSecret: string | undefined;
   staticDir: string;
   dataDir: string;
@@ -90,8 +101,8 @@ export interface Config {
   camera: {
     host: string | undefined;
     alias: string | undefined;
-    username: string;
-    password: string;
+    username: string | undefined;
+    password: string | undefined;
     passwordEncoding: Env['KASA_PASSWORD_ENCODING'];
     streamPort: number;
     apiPort: number;
@@ -121,13 +132,21 @@ const repoRoot = findRepoRoot() ?? process.cwd();
 const defaultStaticDir = path.join(repoRoot, 'apps', 'web', 'dist');
 const defaultDataDir = path.join(repoRoot, 'data');
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+export function viewerCheck(config: Config): PasswordCheck | undefined {
+  if (!config.viewer) return undefined;
+  return config.viewer.kind === 'hash'
+    ? passwordCheckFromHash(config.viewer.hash)
+    : passwordCheckFromPlain(config.viewer.password);
+}
+
+/** Environment variables win over settings.json. Without settings, a viewer password is required. */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Settings): Config {
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
     throw new ConfigError(`Invalid configuration:\n${z.prettifyError(parsed.error)}`);
   }
   const e = parsed.data;
-  if (!e.VIEWER_PASSWORD && !e.ALLOW_NO_PASSWORD) {
+  if (!settings && !e.VIEWER_PASSWORD && !e.ALLOW_NO_PASSWORD) {
     throw new ConfigError(
       'VIEWER_PASSWORD is not set.\n' +
         'The page shows a live camera, so it needs a password. Add a line like\n' +
@@ -138,22 +157,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (Boolean(e.TLS_CERT_FILE) !== Boolean(e.TLS_KEY_FILE)) {
     throw new ConfigError('Set both TLS_CERT_FILE and TLS_KEY_FILE, or neither.');
   }
+  const viewer: Config['viewer'] = e.VIEWER_PASSWORD
+    ? { kind: 'plain', password: e.VIEWER_PASSWORD }
+    : settings?.viewerPasswordHash
+      ? { kind: 'hash', hash: settings.viewerPasswordHash }
+      : undefined;
+  const username = e.KASA_USERNAME ?? settings?.camera?.username;
+  const password = e.KASA_PASSWORD ?? settings?.camera?.password;
   return {
     host: e.HOST,
     port: e.PORT,
     logLevel: e.LOG_LEVEL,
     allowedCidrs: e.ALLOWED_CIDRS.length > 0 ? e.ALLOWED_CIDRS : undefined,
     allowedHosts: e.ALLOWED_HOSTS,
-    viewerPassword: e.VIEWER_PASSWORD,
+    viewer,
+    setupComplete: Boolean(viewer || e.ALLOW_NO_PASSWORD) && Boolean(username && password),
+    desktop: false,
     sessionSecret: e.SESSION_SECRET,
     staticDir: e.STATIC_DIR ? path.resolve(e.STATIC_DIR) : defaultStaticDir,
     dataDir: e.DATA_DIR ? path.resolve(e.DATA_DIR) : defaultDataDir,
     https: { enabled: e.HTTPS, certFile: e.TLS_CERT_FILE, keyFile: e.TLS_KEY_FILE },
     camera: {
       host: e.KASA_HOST,
-      alias: e.KASA_ALIAS,
-      username: e.KASA_USERNAME,
-      password: e.KASA_PASSWORD,
+      alias: e.KASA_ALIAS ?? settings?.camera?.alias,
+      username,
+      password,
       passwordEncoding: e.KASA_PASSWORD_ENCODING,
       streamPort: e.KASA_STREAM_PORT,
       apiPort: e.KASA_API_PORT,

@@ -15,6 +15,11 @@ import { loadOrCreateCertificate, readTlsFiles } from './security/tlsCert.js';
 async function main(): Promise<void> {
   loadEnvFile();
   const config = loadConfig();
+  if (!config.setupComplete) {
+    throw new ConfigError(
+      'No camera login yet. Set KASA_USERNAME and KASA_PASSWORD in .env, or finish setup in the app.',
+    );
+  }
   const logger = createLogger(config.logLevel);
 
   const { host, device } = await locateCamera(config.camera, logger);
@@ -26,7 +31,7 @@ async function main(): Promise<void> {
   });
 
   // Keep sessions valid across restarts without asking the user for a secret.
-  if (config.viewerPassword && !config.sessionSecret) {
+  if (config.viewer && !config.sessionSecret) {
     config.sessionSecret = loadOrCreateSecret(config.dataDir, 'session-secret');
   }
 
@@ -51,7 +56,7 @@ async function main(): Promise<void> {
 
   const allowed = clientAllowlist(config);
   logger.info({ networks: allowed }, 'Accepting viewers from these networks');
-  if (!config.viewerPassword) logger.warn('No VIEWER_PASSWORD: anyone on those networks can watch');
+  if (!config.viewer) logger.warn('No VIEWER_PASSWORD: anyone on those networks can watch');
 
   const app = await buildApp({ config, camera, hub, logger, ...(tls ? { tls } : {}) });
   let closeServer: () => Promise<void>;

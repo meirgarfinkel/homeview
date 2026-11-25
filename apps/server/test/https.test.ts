@@ -28,10 +28,11 @@ describe('config', () => {
   });
 
   it('accepts a password, or an explicit opt-out', () => {
-    expect(loadConfig({ ...base, VIEWER_PASSWORD: 'long enough' }).viewerPassword).toBe(
-      'long enough',
-    );
-    expect(loadConfig({ ...base, ALLOW_NO_PASSWORD: 'true' }).viewerPassword).toBeUndefined();
+    expect(loadConfig({ ...base, VIEWER_PASSWORD: 'long enough' }).viewer).toEqual({
+      kind: 'plain',
+      password: 'long enough',
+    });
+    expect(loadConfig({ ...base, ALLOW_NO_PASSWORD: 'true' }).viewer).toBeUndefined();
   });
 
   it('rejects short passwords and half-configured TLS', () => {

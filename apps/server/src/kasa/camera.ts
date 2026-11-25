@@ -74,6 +74,11 @@ export class Camera {
   constructor(host: string, cfg: Config, logger: Logger, device?: DiscoveredDevice) {
     this._host = host;
     const cam = cfg.camera;
+    if (!cam.username || !cam.password) {
+      throw new CameraLocateError(
+        'No camera login yet. Set KASA_USERNAME and KASA_PASSWORD in .env, or finish setup in the app.',
+      );
+    }
     this.credentials = new CameraCredentials(cam.username, cam.password, cam.passwordEncoding);
     this.credentials.applyCipherOptions(device?.sysinfo.c_opt);
     const tls = { pinnedSha256: cam.certSha256 };
