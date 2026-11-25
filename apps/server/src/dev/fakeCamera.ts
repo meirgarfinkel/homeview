@@ -118,6 +118,11 @@ export interface FakeCameraOptions {
     networks?: FakeWifiNetwork[];
     /** Reject set_uplink when this field is present, to test the fallbacks. */
     rejectUplinkField?: string;
+    /**
+     * Accept set_uplink but never join that network: the camera stops
+     * answering discovery, as one given a wrong Wi-Fi password would.
+     */
+    ignoreUplink?: boolean;
   };
 }
 
@@ -161,6 +166,8 @@ export class FakeCamera {
   readonly connectionsOpened: number[] = [];
   onboardingStatus: string;
   uplink: FakeUplink | undefined;
+  /** Set once an ignored set_uplink sent the camera off its setup network. */
+  private lost = false;
   private streamServer: https.Server | undefined;
   private discoverySocket: dgram.Socket | undefined;
   private apiServer: https.Server | undefined;
@@ -211,6 +218,7 @@ export class FakeCamera {
     const socket = dgram.createSocket('udp4');
     this.discoverySocket = socket;
     socket.on('message', (msg, rinfo) => {
+      if (this.lost) return;
       try {
         const req = decryptJson<Record<string, Record<string, unknown>>>(msg);
         if (!req['system']?.['get_sysinfo']) return;
@@ -475,6 +483,10 @@ export class FakeCamera {
         ) {
           const name = this.opts.setupMode.rejectUplinkField;
           return { err_code: -31006, err_msg: `The parameter [${name}] error.` };
+        }
+        if (this.opts.setupMode?.ignoreUplink) {
+          this.lost = true;
+          return ok;
         }
         this.uplink = {
           ssid: field('ssid'),
