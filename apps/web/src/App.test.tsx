@@ -2,13 +2,21 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { App } from './App';
 
-vi.mock('./components/Monitor', () => ({
-  Monitor: ({ onOpenSettings }: { onOpenSettings?: () => void }) => (
-    <button type="button" onClick={onOpenSettings}>
-      Monitor screen
-    </button>
-  ),
-}));
+vi.mock('./components/Monitor', async () => {
+  const { api } = await import('./lib/api');
+  return {
+    Monitor: ({ onOpenSettings }: { onOpenSettings?: () => void }) => (
+      <>
+        <button type="button" onClick={onOpenSettings}>
+          Monitor screen
+        </button>
+        <button type="button" onClick={() => void api.status().catch(() => undefined)}>
+          Poll status
+        </button>
+      </>
+    ),
+  };
+});
 vi.mock('./components/setup/AllSet', () => ({
   AllSet: ({ lanUrl, onContinue }: { lanUrl?: string; onContinue(): void }) => (
     <button type="button" onClick={onContinue}>
@@ -28,12 +36,12 @@ const fetchMock = vi.fn<(path: string, init?: RequestInit) => Promise<Response>>
 const session = (setupComplete: boolean, extra: object = {}) =>
   new Response(
     JSON.stringify({
-      ...extra,
       authRequired: true,
       authenticated: true,
       setupComplete,
       local: true,
       desktop: true,
+      ...extra,
     }),
   );
 
@@ -85,4 +93,52 @@ it('goes straight to the monitor on a later visit', async () => {
   render(<App />);
   expect(await screen.findByRole('button', { name: 'Monitor screen' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: /All set page/ })).toBeNull();
+});
+
+/** Answers by path, so a test can say what each endpoint returns right now. */
+function route(replies: Record<string, () => Response>) {
+  fetchMock.mockImplementation((path) => {
+    const reply = replies[path];
+    return Promise.resolve(reply ? reply() : new Response('{}', { status: 404 }));
+  });
+}
+
+it('signs in after "Set a new password" even if the first check still says signed out', async () => {
+  const { default: userEvent } = await import('@testing-library/user-event');
+  const user = userEvent.setup();
+  let checks = 0;
+  route({
+    '/api/session': () => {
+      checks += 1;
+      // The first load, then one answer from the old settings, then signed in.
+      return session(true, { authenticated: checks > 2 });
+    },
+    '/api/setup/reset-password': () => new Response(null, { status: 204 }),
+  });
+  render(<App retryMs={10} />);
+  await user.click(await screen.findByRole('button', { name: /Set a new password/ }));
+  await user.type(screen.getByLabelText('New password'), 'sleepy-owl-42');
+  await user.type(screen.getByLabelText('New password again'), 'sleepy-owl-42');
+  await user.click(screen.getByRole('button', { name: 'Save password' }));
+  expect(await screen.findByRole('button', { name: 'Monitor screen' })).toBeTruthy();
+});
+
+it('goes back to sign in when the server stops accepting this browser', async () => {
+  const { default: userEvent } = await import('@testing-library/user-event');
+  const user = userEvent.setup();
+  let signedIn = true;
+  route({
+    '/api/session': () => session(true, { authenticated: signedIn }),
+    '/api/status': () =>
+      new Response(JSON.stringify({ error: 'unauthorized', message: 'Sign in required' }), {
+        status: 401,
+      }),
+  });
+  render(<App />);
+  await screen.findByRole('button', { name: 'Monitor screen' });
+  // The password was changed somewhere else.
+  signedIn = false;
+  await user.click(screen.getByRole('button', { name: 'Poll status' }));
+  expect(await screen.findByLabelText('Password')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Monitor screen' })).toBeNull();
 });

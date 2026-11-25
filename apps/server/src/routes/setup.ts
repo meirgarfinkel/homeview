@@ -173,6 +173,37 @@ export function reloadAfterReply(
   });
 }
 
+const notApplied: ApiError = {
+  error: 'reload-failed',
+  message: 'The new password is saved, but Kasa Home could not start using it. Restart Kasa Home.',
+};
+
+/**
+ * Save a new viewer password and reply once the rebuilt app uses it, with a
+ * cookie for it. Replying first would let the page ask "am I signed in?" of
+ * the old app, which still has the old password, and get "no".
+ */
+export async function saveViewerPassword(
+  deps: { config: Config; settings: SettingsStore; reload?: () => Promise<void> },
+  req: FastifyRequest,
+  reply: FastifyReply,
+  password: string,
+): Promise<FastifyReply> {
+  const hash = await hashPassword(password);
+  deps.settings.save({ ...deps.settings.load(), viewerPasswordHash: hash });
+  try {
+    // Resolves once the new app is ready; it takes over right after this reply.
+    await deps.reload?.();
+  } catch (err) {
+    req.log.error({ err: (err as Error).message }, 'Could not apply the new password');
+    return reply.code(500).send(notApplied);
+  }
+  return reply
+    .header('Set-Cookie', cookieForHash(deps.config, req, hash))
+    .code(204)
+    .send();
+}
+
 /**
  * A session cookie for a new password hash. The rebuilt app uses the same
  * secret and binds sessions to the same hash, so the cookie stays valid.
@@ -258,13 +289,7 @@ export async function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps)
     if (config.viewer?.kind === 'plain') return reply.code(409).send(passwordFromEnv);
     const { password } = req.body;
     if (password.length < MIN_VIEWER_PASSWORD) return reply.code(400).send(tooShort);
-    const hash = await hashPassword(password);
-    settings.save({ ...settings.load(), viewerPasswordHash: hash });
-    reloadAfter(reply);
-    return reply
-      .header('Set-Cookie', cookieForHash(config, req, hash))
-      .code(204)
-      .send();
+    return saveViewerPassword(deps, req, reply, password);
   };
 
   app.post<{ Body: { password: string } }>(

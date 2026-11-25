@@ -86,6 +86,8 @@ type Located = { host: string; device?: DiscoveredDevice };
 interface Instance {
   config: Config;
   camera: Camera | undefined;
+  /** What discovery said about the camera, kept so a reload can reuse it. */
+  device: DiscoveredDevice | undefined;
   hub: LiveHub | undefined;
   watcher: CameraWatcher | undefined;
   timers: NodeJS.Timeout[];
@@ -162,7 +164,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
    * and the old one closes once its open requests finish.
    */
   const replace = async (located?: Located, onPrepared?: () => void): Promise<void> => {
-    const next = await prepare(readConfig(), located);
+    const config = readConfig();
+    const next = await prepare(config, located ?? sameCameraAsNow(config));
     if (onPrepared) {
       onPrepared();
       await new Promise((r) => setImmediate(r));
@@ -171,6 +174,17 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     await next.swapInto(listener);
     if (previous) await disposeInstance(previous);
     next.started();
+  };
+
+  /**
+   * Where the current camera is, when the new settings point at the same
+   * camera with the same login (a viewer password change, say). The reload
+   * then skips a network search that would hold up the reply for seconds.
+   */
+  const sameCameraAsNow = (config: Config): Located | undefined => {
+    if (!current?.camera || !config.setupComplete) return undefined;
+    if (JSON.stringify(current.config.camera) !== JSON.stringify(config.camera)) return undefined;
+    return { host: current.camera.host, ...(current.device ? { device: current.device } : {}) };
   };
 
   /** Everything up to listening, so a reload can fail without taking the old server down. */
@@ -240,6 +254,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     const instance = (port: number): Instance => ({
       config,
       camera,
+      device,
       hub,
       watcher: undefined,
       timers: [],

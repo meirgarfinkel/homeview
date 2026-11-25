@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { CodecMessage, StreamState } from '@kasa/shared';
 import { PcmPlayer } from '../lib/audioPlayer';
 import { decodeMulaw, levelFromRms, rms } from '../lib/g711';
+import { api, notifyUnauthorized } from '../lib/api';
 import { LiveConnection, type ConnectionState } from '../lib/liveConnection';
 import { isMseSupported, MsePlayer } from '../lib/msePlayer';
 
@@ -43,6 +44,15 @@ export function useLiveStream(videoRef: RefObject<HTMLVideoElement | null>): Liv
 
     const conn = new LiveConnection({
       onConnection: setConnection,
+      // The browser hides why a socket was refused, so ask whether this one is still signed in.
+      onRefused: () => {
+        api.session().then(
+          (s) => {
+            if (s.authRequired && !s.authenticated) notifyUnauthorized();
+          },
+          () => undefined,
+        );
+      },
       onMessage: (msg) => {
         if (msg.type === 'status') {
           setStream(msg.state);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SessionResponse } from '@kasa/shared';
-import { api } from './lib/api';
+import { api, onUnauthorized } from './lib/api';
 import { Login } from './components/Login';
 import { Monitor } from './components/Monitor';
 import { Settings } from './components/Settings';
@@ -9,6 +9,10 @@ import { SetupWizard } from './components/setup/SetupWizard';
 import { NotSetUp } from './components/setup/NotSetUp';
 
 const RETRIES = 40;
+/** Checks after signing in before the page believes a "signed out" answer. */
+const SIGN_IN_CHECKS = 10;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * The server reloads after setup, so reads may fail, or answer from the old settings, for a
@@ -23,7 +27,7 @@ async function sessionAfterSetup(retryMs: number): Promise<SessionResponse> {
       // the server is switching over
     }
     if (attempt >= RETRIES) throw new Error('setup not confirmed');
-    await new Promise((resolve) => setTimeout(resolve, retryMs));
+    await sleep(retryMs);
   }
 }
 
@@ -35,6 +39,37 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
     api.session().then(setSession, (err: Error) => setError(err.message));
   }, []);
   useEffect(refresh, [refresh]);
+
+  // Signed out elsewhere (a password change): show the sign-in page again.
+  useEffect(() => {
+    onUnauthorized(refresh);
+    return () => onUnauthorized(undefined);
+  }, [refresh]);
+
+  /**
+   * After signing in or setting a new password. The server may still be
+   * switching to the new password for a moment, so a "signed out" answer
+   * is checked again a few times before the sign-in page comes back.
+   */
+  const afterSignIn = useCallback(() => {
+    void (async () => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const next = await api.session();
+          if (next.authenticated || attempt >= SIGN_IN_CHECKS) {
+            setSession(next);
+            return;
+          }
+        } catch (err) {
+          if (attempt >= SIGN_IN_CHECKS) {
+            setError((err as Error).message);
+            return;
+          }
+        }
+        await sleep(retryMs);
+      }
+    })();
+  }, [retryMs]);
 
   const [finishing, setFinishing] = useState<'working' | 'stuck'>();
   /** Set once, right after the first-run wizard, to show the All set page. */
@@ -86,10 +121,10 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
   }
   if (!session) return null;
   if (!session.setupComplete) {
-    return session.local ? <SetupWizard onDone={afterSetup} /> : <NotSetUp />;
+    return session.local ? <SetupWizard onDone={afterSetup} /> : <NotSetUp onSetUp={refresh} />;
   }
   if (session.authRequired && !session.authenticated) {
-    return <Login local={session.local} onSuccess={refresh} />;
+    return <Login local={session.local} onSuccess={afterSignIn} />;
   }
   if (allSet) {
     return (

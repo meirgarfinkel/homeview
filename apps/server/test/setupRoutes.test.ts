@@ -309,14 +309,17 @@ describe('POST /api/setup/reset-password', () => {
     const oldCookie = await login(s, VIEWER);
     expect((await get(s, '/api/status', oldCookie)).status).toBe(200);
 
+    const started = Date.now();
     const reset = await post(s, '/api/setup/reset-password', { password: 'new password' });
     expect(reset.status).toBe(204);
+    // Only the password changed, so the rebuild keeps the camera it found
+    // instead of searching the network again.
+    expect(Date.now() - started).toBeLessThan(1000);
     const newCookie = cookieOf(reset);
-    // The old cookie stops working once the new settings are in use.
-    for (let i = 0; i < 100; i++) {
-      if ((await get(s, '/api/status', oldCookie)).status === 401) break;
-      await new Promise((r) => setTimeout(r, 50));
-    }
+    // The reply comes once the new settings are in use: no waiting needed.
+    expect(await (await get(s, '/api/session', newCookie)).json()).toMatchObject({
+      authenticated: true,
+    });
     expect((await get(s, '/api/status', oldCookie)).status).toBe(401);
     expect((await get(s, '/api/status', newCookie)).status).toBe(200);
     expect((await post(s, '/api/login', { password: VIEWER })).status).toBe(401);

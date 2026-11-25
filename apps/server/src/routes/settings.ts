@@ -2,15 +2,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiError, SettingsResponse, SetupExistingResult } from '@kasa/shared';
 import type { Config } from '../config.js';
 import { isLoopback } from '../security/network.js';
-import { hashPassword, verifyPassword } from '../security/passwordHash.js';
+import { verifyPassword } from '../security/passwordHash.js';
 import type { SettingsStore } from '../settings/store.js';
 import type { ServerHooks } from '../app.js';
 import {
   checkCameraLogin,
-  cookieForHash,
   existingCameraSchema,
   MIN_VIEWER_PASSWORD,
   reloadAfterReply,
+  saveViewerPassword,
 } from './setup.js';
 
 /**
@@ -115,13 +115,7 @@ export async function registerSettingsRoutes(
         return reply.code(403).send(wrongPassword);
       }
       if (password.length < MIN_VIEWER_PASSWORD) return reply.code(400).send(tooShort);
-      const hash = await hashPassword(password);
-      settings.save({ ...settings.load(), viewerPasswordHash: hash });
-      reloadAfterReply(deps, reply);
-      return reply
-        .header('Set-Cookie', cookieForHash(config, req, hash))
-        .code(204)
-        .send();
+      return saveViewerPassword(deps, req, reply, password);
     },
   );
 

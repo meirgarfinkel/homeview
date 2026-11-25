@@ -8,6 +8,8 @@ export interface LiveHandlers {
   onVideoFragment(data: Uint8Array): void;
   onAudio(data: Uint8Array): void;
   onConnection(state: ConnectionState): void;
+  /** The socket closed before it ever opened, which is how a refused sign-in looks. */
+  onRefused?(): void;
 }
 
 /** One WebSocket to /api/live with automatic reconnect. */
@@ -38,8 +40,10 @@ export class LiveConnection {
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     this.handlers.onConnection('connecting');
+    let opened = false;
 
     ws.onopen = () => {
+      opened = true;
       this.attempt = 0;
       this.handlers.onConnection('open');
     };
@@ -71,6 +75,7 @@ export class LiveConnection {
       this.ws = undefined;
       this.handlers.onConnection('closed');
       if (this.stopped) return;
+      if (!opened) this.handlers.onRefused?.();
       const delay = Math.min(10_000, 500 * 2 ** this.attempt++);
       this.retry = setTimeout(() => this.open(), delay);
     };

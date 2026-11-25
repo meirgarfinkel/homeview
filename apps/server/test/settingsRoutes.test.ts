@@ -205,15 +205,8 @@ describe('PUT /api/settings/viewer-password', () => {
     expect(res.status).toBe(204);
     const fresh = cookieOf(res);
     expect(settings.load().viewerPasswordHash).toMatch(/^scrypt\$/);
-    // The rebuild happens after the reply; wait until the old cookie stops working.
-    let oldStatus = 0;
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      oldStatus = (await send(s, 'GET', '/api/settings', undefined, { cookie: old })).status;
-      if (oldStatus === 401) break;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    expect(oldStatus).toBe(401);
+    // The reply comes once the new settings are in use: no waiting needed.
+    expect((await send(s, 'GET', '/api/settings', undefined, { cookie: old })).status).toBe(401);
     expect((await send(s, 'GET', '/api/settings', undefined, { cookie: fresh })).status).toBe(200);
     expect((await send(s, 'POST', '/api/login', { password: NEW_VIEWER })).status).toBe(204);
   });

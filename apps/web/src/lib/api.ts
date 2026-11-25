@@ -24,12 +24,28 @@ export class ApiRequestError extends Error {
   }
 }
 
+let unauthorizedHandler: (() => void) | undefined;
+
+/**
+ * Called when the server stops accepting this browser's sign-in, for example
+ * after the password was changed on another device. One handler at a time.
+ */
+export function onUnauthorized(handler: (() => void) | undefined): void {
+  unauthorizedHandler = handler;
+}
+
+export function notifyUnauthorized(): void {
+  unauthorizedHandler?.();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
     credentials: 'same-origin',
   });
+  // A 401 from sign-in itself only means a wrong password.
+  if (res.status === 401 && path !== '/api/login') notifyUnauthorized();
   if (!res.ok) {
     let body: Partial<ApiError> = {};
     try {
