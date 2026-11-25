@@ -11,7 +11,7 @@ vi.mock('electron', () => ({
   app: { getLoginItemSettings: loginItems.get, setLoginItemSettings: loginItems.set },
 }));
 
-const { getAutostart, linuxAutostartFile, setAutostart, startedAtLogin } =
+const { getAutostart, linuxAutostartFile, macLaunchAgent, setAutostart, startedAtLogin } =
   await import('../src/autostart.js');
 
 const realPlatform = process.platform;
@@ -70,7 +70,47 @@ describe.runIf(process.platform === 'linux')('Linux autostart', () => {
   });
 });
 
-describe.each(['darwin', 'win32'] as const)('autostart on %s', (platform) => {
+describe('macOS autostart', () => {
+  let home: string;
+  const savedHome = process.env['HOME'];
+  const plist = () =>
+    path.join(home, 'Library', 'LaunchAgents', 'io.github.meirgarfinkel.kasahome.plist');
+
+  beforeEach(() => {
+    home = mkdtempSync(path.join(tmpdir(), 'kasa-home-'));
+    process.env['HOME'] = home;
+    onPlatform('darwin');
+  });
+  afterEach(() => {
+    if (savedHome === undefined) delete process.env['HOME'];
+    else process.env['HOME'] = savedHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('adds and removes a LaunchAgent that starts the app hidden', () => {
+    expect(getAutostart()).toBe(false);
+    setAutostart(true);
+    expect(getAutostart()).toBe(true);
+    const text = readFileSync(plist(), 'utf8');
+    expect(text).toContain('<string>io.github.meirgarfinkel.kasahome</string>');
+    expect(text).toContain('<key>RunAtLoad</key>\n  <true/>');
+    expect(text).toContain(`<string>${process.execPath}</string>\n    <string>--hidden</string>`);
+
+    setAutostart(false);
+    expect(getAutostart()).toBe(false);
+    expect(existsSync(plist())).toBe(false);
+    // Not Electron's login items, whose launch flag macOS 13 and later don't report.
+    expect(loginItems.set).not.toHaveBeenCalledWith(expect.objectContaining({ openAtLogin: true }));
+  });
+
+  it('escapes the app path for the plist', () => {
+    expect(macLaunchAgent('/Applications/A & B <x>.app/Contents/MacOS/Kasa Home')).toContain(
+      '<string>/Applications/A &amp; B &lt;x&gt;.app/Contents/MacOS/Kasa Home</string>',
+    );
+  });
+});
+
+describe.each(['win32'] as const)('autostart on %s', (platform) => {
   beforeEach(() => onPlatform(platform));
 
   it('uses a login item that starts hidden', () => {
@@ -102,16 +142,12 @@ describe('startedAtLogin', () => {
     }
   });
 
-  // macOS starts login items without their arguments.
-  it('is true on macOS when the system opened it at login', () => {
-    onPlatform('darwin');
-    loginItems.get.mockReturnValue({ openAtLogin: true, wasOpenedAtLogin: true });
-    expect(startedAtLogin(['app'])).toBe(true);
-  });
-
-  it('ignores the macOS-only flag elsewhere', () => {
-    onPlatform('win32');
-    loginItems.get.mockReturnValue({ openAtLogin: true, wasOpenedAtLogin: true });
-    expect(startedAtLogin(['app'])).toBe(false);
+  // The LaunchAgent passes --hidden, so the flag macOS 13+ no longer reports isn't needed.
+  it('does not rely on wasOpenedAtLogin', () => {
+    for (const platform of ['darwin', 'win32'] as const) {
+      onPlatform(platform);
+      loginItems.get.mockReturnValue({ openAtLogin: true, wasOpenedAtLogin: true });
+      expect(startedAtLogin(['app'])).toBe(false);
+    }
   });
 });

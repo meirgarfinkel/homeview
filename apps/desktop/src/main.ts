@@ -7,6 +7,7 @@ import { ensureDataDir } from '../../server/src/security/dataDir.js';
 import { startServer, type RunningServer } from '../../server/src/server.js';
 import { SettingsStore } from '../../server/src/settings/store.js';
 import { getAutostart, setAutostart, startedAtLogin } from './autostart.js';
+import { reopenOnActivate, stopWithin } from './lifecycle.js';
 import { keepLogSmall, openLogFile } from './logs.js';
 import { safeStorageProtector } from './protector.js';
 import { runSelfTest } from './selfTest.js';
@@ -61,11 +62,23 @@ async function run(): Promise<void> {
     if (running.server) void shell.openExternal(running.server.localUrl);
   };
   app.on('second-instance', open);
+  // macOS doesn't start a second instance when the app is opened again; it activates this one.
+  const reopen = reopenOnActivate(app, open);
 
   const quit = async () => {
     if (stopped) return;
     stopped = true;
-    await running.server?.stop().catch(() => undefined);
+    const server = running.server;
+    if (server) {
+      await stopWithin(
+        () => server.stop(),
+        5000,
+        (err) => {
+          if (logger) logger.error({ err }, 'Could not stop Kasa Home cleanly');
+          else console.error('Could not stop Kasa Home cleanly:', err);
+        },
+      );
+    }
     app.quit();
   };
   // Quitting from outside (a log out, say) stops the server first too.
@@ -116,6 +129,7 @@ async function run(): Promise<void> {
 
   // A start at login stays in the tray.
   if (!startedAtLogin()) open();
+  reopen.started();
 }
 
 if (process.argv.includes('--self-test')) {
