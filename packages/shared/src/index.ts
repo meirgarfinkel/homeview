@@ -8,6 +8,9 @@
 
 export const LIVE_WS_PATH = '/api/live';
 
+/** Close code for a live view whose phone was removed from remote access. */
+export const DEVICE_REMOVED_CLOSE = 4401;
+
 export const BinaryKind = {
   /** Fragmented-MP4 initialization segment (ftyp + moov). */
   VideoInit: 1,
@@ -88,9 +91,108 @@ export interface StatusResponse {
 export interface SessionResponse {
   authRequired: boolean;
   authenticated: boolean;
+  /** False until a viewer password and a camera login are both saved. */
+  setupComplete: boolean;
+  /** True when the request comes from this computer. */
+  local: boolean;
+  /** True when the server runs inside the desktop app. */
+  desktop: boolean;
+  /** True when this request came through the remote tunnel. Absent means false. */
+  remote?: boolean;
+  /** True when remote access is on and reachable. Absent means false. */
+  remoteOn?: boolean;
+  /** The address phones use. Only sent to this computer, and only when it has a LAN address. */
+  lanUrl?: string;
 }
 
 export interface ApiError {
   error: string;
   message: string;
+}
+
+/** Reply to GET /api/settings. It never holds a password. */
+export interface SettingsResponse {
+  camera: { username: string; alias?: string; localOnly: boolean } | null;
+  /** True when the request comes from this computer. */
+  local: boolean;
+  desktop: boolean;
+  /** Start at login. Null when this server can't change it. */
+  autostart: boolean | null;
+  /** Settings that environment variables set, which the page shows as read-only. */
+  managedByEnv: ('viewerPassword' | 'camera')[];
+}
+
+/** A camera found during setup. */
+export interface SetupCamera {
+  alias: string;
+  model: string;
+  host: string;
+}
+
+/** Reply to POST /api/setup/existing-camera when the login worked. */
+export type SetupExistingResult = { saved: SetupCamera } | { choose: SetupCamera[] };
+
+/** Camera onboarding, as served by /api/setup/onboarding. */
+export type OnboardingPhase =
+  | 'reset-camera' // waiting for the parent to say the camera is reset
+  | 'join-camera-wifi' // auto: switching; manual: waiting to see the camera at 192.168.0.10
+  | 'scanning' // asking the camera for networks
+  | 'choose-wifi' // waiting for { ssid, passphrase, alias }
+  | 'sending' // set_uplink
+  | 'return-home' // auto: switching back; manual: waiting to be on home Wi-Fi
+  | 'waiting-for-camera' // up to 120 s for the camera to appear by device ID
+  | 'finishing' // alias, clock, on-video time, account link
+  | 'done'
+  | 'failed';
+
+export interface OnboardingNetwork {
+  ssid: string;
+  /** RSSI in dBm. */
+  signal?: number;
+  open: boolean;
+  band?: string;
+  /** The camera's name for the security, such as WPA2_PSK. */
+  security?: string;
+}
+
+export interface OnboardingStatus {
+  phase: OnboardingPhase;
+  autoWifi: boolean;
+  networks?: OnboardingNetwork[]; // in choose-wifi
+  cameraNetwork?: string; // e.g. Kasa_Cam_1A2B, when known
+  /** The camera found on its setup network. */
+  camera?: { model: string; host: string; alias: string };
+  error?: { message: string; retryFrom: OnboardingPhase }; // in failed
+  result?: { alias: string; host: string; linked: boolean; warnings: string[] }; // in done
+}
+
+export type OnboardingAnswer =
+  | { type: 'camera-reset' }
+  | { type: 'wifi'; ssid: string; passphrase: string; alias: string }
+  | { type: 'retry' };
+
+export type RemotePhase = 'off' | 'starting' | 'sign-in' | 'approve' | 'on' | 'problem';
+
+export interface RemoteDevice {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastSeenAt?: string;
+}
+
+export interface RemoteStatus {
+  /** The helper is installed (desktop app). */
+  available: boolean;
+  enabled: boolean;
+  phase: RemotePhase;
+  /** Set when the phase is 'on'. */
+  url?: string;
+  /** Set when the phase is 'problem'. */
+  message?: string;
+  devices: RemoteDevice[];
+}
+
+export interface PairCodeResponse {
+  url: string;
+  expiresAt: string;
 }

@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { verifyPassword } from './passwordHash.js';
 
 /**
  * Optional viewer password (VIEWER_PASSWORD). Being on the LAN is often
@@ -15,21 +16,38 @@ function digest(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
 }
 
+/** How to check a candidate password, and what sessions are bound to. */
+export interface PasswordCheck {
+  verify(candidate: string): Promise<boolean>;
+  /** Mixed into the session key, so changing the password logs everyone out. */
+  binding: string;
+}
+
+export function passwordCheckFromPlain(password: string): PasswordCheck {
+  return {
+    binding: password,
+    verify: async (candidate) => timingSafeEqual(digest(candidate), digest(password)),
+  };
+}
+
+export function passwordCheckFromHash(hash: string): PasswordCheck {
+  return { binding: hash, verify: (candidate) => verifyPassword(candidate, hash) };
+}
+
 export class SessionManager {
   private readonly key: Buffer;
 
   constructor(
-    private readonly password: string,
+    private readonly check: PasswordCheck,
     secret?: string,
   ) {
-    // Bind sessions to the password so changing it logs everyone out.
     this.key = createHmac('sha256', secret ?? randomBytes(32).toString('hex'))
-      .update(password, 'utf8')
+      .update(check.binding, 'utf8')
       .digest();
   }
 
-  checkPassword(candidate: string): boolean {
-    return timingSafeEqual(digest(candidate), digest(this.password));
+  checkPassword(candidate: string): Promise<boolean> {
+    return this.check.verify(candidate);
   }
 
   issue(now = Date.now()): { token: string; expires: Date } {

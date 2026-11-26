@@ -14,24 +14,18 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { Writable } from 'node:stream';
 import { findRepoRoot, loadEnvFile } from '../env.js';
-import { discover, isCamera, type DiscoveredDevice } from '../kasa/discovery.js';
-import { LinkieError } from '../kasa/linkieClient.js';
-import {
-  defaultSetupLogins,
-  findWorkingLogin,
-  finishSetup,
-  getCloudInfo,
-  joinWifi,
-  scanWifi,
-  type LoginCandidate,
-  type WifiNetwork,
-} from '../kasa/setup.js';
-import { cameraTimeZone, hostTimeZone } from '../kasa/timeZone.js';
+import { createLogger } from '../logger.js';
 import { updateEnvFile } from '../setup/envFile.js';
 import * as nm from '../setup/nmcli.js';
-
-/** Addresses the Kasa app expects a camera to use on its setup network. */
-const SETUP_ADDRESSES = ['192.168.191.1', '192.168.0.1', '192.168.0.10'];
+import {
+  Onboarding,
+  OnboardingError as Abort,
+  SETUP_ADDRESSES,
+  type OnboardingPhase,
+  type OnboardingStatus,
+} from '../setup/onboarding.js';
+import { createWifiSwitcher, manualSwitcher, type WifiSwitcher } from '../setup/wifiSwitcher.js';
+import type { Settings } from '../settings/store.js';
 
 // Testing knobs, used to rehearse the flow against `pnpm dev:fake-camera`.
 const testTargets = process.env['SETUP_TEST_TARGETS']?.split(',').filter(Boolean);
@@ -76,50 +70,15 @@ async function choose<T>(items: T[], label: (t: T) => string, q: string): Promis
   return Number.isInteger(n) && n >= 1 && n <= items.length ? items[n - 1] : undefined;
 }
 
-class Abort extends Error {}
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 // ---------- steps ----------
 
-async function waitForCamera(
-  match: (d: DiscoveredDevice) => boolean,
-  seconds: number,
-  targets?: string[],
-): Promise<DiscoveredDevice | undefined> {
-  const deadline = Date.now() + seconds * 1000;
-  const extra = testTargets ?? targets;
-  while (Date.now() < deadline) {
-    if (!testTargets) {
-      const found = (await discover({ timeoutMs: 2500 })).filter(isCamera).find(match);
-      if (found) return found;
-    }
-    if (extra) {
-      const direct = (await discover({ timeoutMs: 1500, targets: extra, port: discoveryPort }))
-        .filter(isCamera)
-        .find(match);
-      if (direct) return direct;
-    }
-    process.stdout.write('.');
-  }
-  return undefined;
-}
-
-/**
- * Logins to try. The account login is left out while on the camera's open
- * setup network, where a look-alike network could collect it.
- */
-function setupLogins(includeAccount: boolean): LoginCandidate[] {
-  const list: LoginCandidate[] = [];
+function setupLogin() {
   const override = process.env['SETUP_LOGIN'];
-  if (override?.includes(':')) {
-    const i = override.indexOf(':');
-    list.push({
-      label: 'SETUP_LOGIN',
-      username: override.slice(0, i),
-      password: override.slice(i + 1),
-    });
-  }
-  return [...list, ...defaultSetupLogins(includeAccount ? account() : undefined)];
+  if (!override?.includes(':')) return [];
+  const i = override.indexOf(':');
+  return [
+    { label: 'SETUP_LOGIN', username: override.slice(0, i), password: override.slice(i + 1) },
+  ];
 }
 
 function account() {
@@ -128,48 +87,80 @@ function account() {
   return username && password ? { username, password } : undefined;
 }
 
-async function joinCameraNetwork(useNmcli: boolean): Promise<void> {
-  say('\nStep 2: join the camera’s setup Wi-Fi.');
-  if (!useNmcli) {
-    say('Join the camera’s Wi-Fi network on this computer now (usually named like Kasa_…).');
-    await ask('Press Enter once connected.');
-    return;
+/** nmcli when it can switch networks, otherwise asks the person to switch by hand. */
+async function terminalSwitcher(): Promise<WifiSwitcher> {
+  const auto = manualWifi
+    ? manualSwitcher()
+    : await createWifiSwitcher({
+        onNote: say,
+        onNotOnWifi() {
+          say('\nThis computer isn’t on Wi-Fi, so it can’t switch networks by itself.');
+          say('You’ll be asked to switch networks by hand instead.');
+        },
+        async pickNetwork(all) {
+          const likely = all.filter((n) => nm.looksLikeCameraNetwork(n.ssid));
+          const list = likely.length > 0 ? likely : all;
+          if (likely.length === 0) say('No network looks like a camera; showing all of them.');
+          const pick = await choose(
+            list,
+            (n) => `${n.ssid}  (signal ${n.signal}%${n.security ? `, ${n.security}` : ', open'})`,
+            'Which one is the camera?',
+          );
+          if (!pick) throw new Abort('No network chosen.');
+          const password = pick.security ? await askHidden('Its Wi-Fi password:') : undefined;
+          return { ssid: pick.ssid, password };
+        },
+      });
+  if (auto.auto) {
+    return {
+      auto: true,
+      async joinCameraNetwork() {
+        say('\nStep 2: join the camera’s setup Wi-Fi.');
+        return auto.joinCameraNetwork();
+      },
+      returnHome: () => auto.returnHome(),
+    };
   }
-  say('Scanning for Wi-Fi networks…');
-  const all = await nm.listWifi();
-  const likely = all.filter((n) => nm.looksLikeCameraNetwork(n.ssid));
-  const list = likely.length > 0 ? likely : all;
-  if (likely.length === 0) say('No network looks like a camera; showing all of them.');
-  const pick = await choose(
-    list,
-    (n) => `${n.ssid}  (signal ${n.signal}%${n.security ? `, ${n.security}` : ', open'})`,
-    'Which one is the camera?',
-  );
-  if (!pick) throw new Abort('No network chosen.');
-  const password = pick.security ? await askHidden('Its Wi-Fi password:') : undefined;
-  say(`Joining ${pick.ssid}…`);
-  await nm.joinSetupNetwork(pick.ssid, password);
-  await wait(3000);
+  return {
+    auto: false,
+    async joinCameraNetwork() {
+      say('\nStep 2: join the camera’s setup Wi-Fi.');
+      say('Join the camera’s Wi-Fi network on this computer now (usually named like Kasa_…).');
+      await ask('Press Enter once connected.');
+      return undefined;
+    },
+    async returnHome() {
+      say('\nReconnect this computer to your home Wi-Fi now.');
+      await ask('Press Enter once connected.');
+    },
+  };
 }
 
-async function returnHome(useNmcli: boolean, homeProfile: string | undefined): Promise<void> {
-  if (useNmcli && homeProfile) {
-    say(`\nRejoining ${homeProfile}…`);
-    try {
-      await nm.reconnect(homeProfile);
-    } finally {
-      await nm.deleteSetupProfile();
-    }
-    await wait(3000);
-  } else {
-    say('\nReconnect this computer to your home Wi-Fi now.');
-    await ask('Press Enter once connected.');
-  }
+type Network = NonNullable<OnboardingStatus['networks']>[number];
+
+function describeNetwork(n: Network): string {
+  const signal = n.signal === undefined ? '' : `${n.signal} dBm`;
+  return `${n.ssid}  (${[n.band, signal, n.open ? 'open' : n.security].filter(Boolean).join(', ')})`;
 }
 
-function describeNetwork(n: WifiNetwork): string {
-  const signal = n.rssi === undefined ? '' : `${n.rssi} dBm`;
-  return `${n.ssid}  (${[n.band, signal, n.open ? 'open' : n.wpaMode].filter(Boolean).join(', ')})`;
+/** Resolves with the status once the job reaches one of these phases (or fails). */
+function reach(job: Onboarding, phases: OnboardingPhase[]): Promise<OnboardingStatus> {
+  return new Promise((resolve) => {
+    const check = () => {
+      const s = job.status();
+      if (phases.includes(s.phase) || s.phase === 'failed') {
+        clearInterval(timer);
+        resolve(s);
+      }
+    };
+    const timer = setInterval(check, 100);
+    check();
+  });
+}
+
+function orThrow(s: OnboardingStatus): OnboardingStatus {
+  if (s.phase === 'failed') throw new Abort(s.error?.message ?? 'Setup failed.');
+  return s;
 }
 
 async function main(): Promise<void> {
@@ -186,127 +177,97 @@ async function main(): Promise<void> {
     throw new Abort('Linking needs KASA_USERNAME and KASA_PASSWORD in .env.');
   }
 
-  const useNmcli = !manualWifi && (await nm.nmcliAvailable());
-  const homeProfile = useNmcli ? await nm.activeWifiConnection() : undefined;
-  if (useNmcli && !homeProfile) {
-    say('\nThis computer isn’t on Wi-Fi, so it can’t switch networks by itself.');
-    say('You’ll be asked to switch networks by hand instead.');
-  }
-  const autoSwitch = useNmcli && homeProfile !== undefined;
+  const switcher = await terminalSwitcher();
+  let saved: NonNullable<Settings['camera']> | undefined;
+  let dots = false;
+  const job = new Onboarding({
+    mode: bind ? 'account' : 'local',
+    ...(bind && acct ? { account: acct } : {}),
+    switcher,
+    setupAddresses: testTargets ?? SETUP_ADDRESSES,
+    apiPort,
+    discovery: { ...(testTargets ? { targets: testTargets } : {}), port: discoveryPort },
+    // The person has already said they joined the camera's Wi-Fi, so look for 30 s as before.
+    timeouts: { cameraWifiMs: 30_000 },
+    extraLogins: setupLogin(),
+    timeZone: process.env['KASA_TIMEZONE'],
+    logger: createLogger('silent'),
+    onSaved: (camera) => (saved = camera),
+    onEvent(e) {
+      if (e.type === 'tick') {
+        process.stdout.write('.');
+        dots = true;
+      } else if (e.type === 'note') {
+        if (dots) say('');
+        dots = false;
+        say(e.text);
+      }
+    },
+  });
 
   say('\nNow factory-reset the camera with its reset button (see its manual for how');
   say('long to hold it). This erases its settings: if it is your working monitor, it');
   say('stays offline until setup finishes. Wait until it is ready for setup.');
   await ask('Press Enter when the camera is in setup mode.');
+  job.answer({ type: 'camera-reset' });
 
-  await joinCameraNetwork(autoSwitch);
-  let onCameraNetwork = true;
-  try {
-    say('Looking for the camera');
-    const cam = await waitForCamera(() => true, 30, SETUP_ADDRESSES);
-    say('');
-    if (!cam) throw new Abort('No camera answered on this network.');
-    say(`Found ${cam.model || 'a camera'} at ${cam.host}.`);
-
-    const login = await findWorkingLogin({ host: cam.host, apiPort }, setupLogins(false));
-    if (!login) {
-      throw new Abort(
-        'The camera rejected every setup login tried. Set SETUP_LOGIN=user:password to try another.',
-      );
+  const ready = orThrow(await reach(job, ['choose-wifi']));
+  if (dots) say('');
+  dots = false;
+  say('\nStep 3: choose your home Wi-Fi (the camera only sees 2.4 GHz networks).');
+  let home = await choose(
+    ready.networks ?? [],
+    describeNetwork,
+    'Number, or Enter to type a name:',
+  );
+  if (!home) {
+    const ssid = await ask('Wi-Fi name:');
+    if (!ssid) {
+      await stop(job, switcher);
+      throw new Abort('No Wi-Fi chosen.');
     }
-    say(`Logged in with: ${login.candidate.label} (${login.credentials.resolvedEncoding}).`);
-    const cloud = await getCloudInfo(login.client);
-    if (cloud.bound) say('Note: the camera says it is already linked to an account.');
-
-    say('\nStep 3: choose your home Wi-Fi (the camera only sees 2.4 GHz networks).');
-    const networks = await scanWifi(login.client);
-    let home = await choose(networks, describeNetwork, 'Number, or Enter to type a name:');
-    if (!home) {
-      const ssid = await ask('Wi-Fi name:');
-      if (!ssid) throw new Abort('No Wi-Fi chosen.');
-      home = { ssid, band: '2G', rssi: undefined, wpaMode: '', encryption: '', open: false };
-    }
-    const passphrase = home.open ? '' : await askHidden(`Password for ${home.ssid}:`);
-    const alias = await ask('Camera name:', cam.alias || 'nursery');
-
-    say(`\nThe camera will join "${home.ssid}"${bind ? ' and be linked to your account' : ''}.`);
-    if (!(await confirm('Go ahead?'))) throw new Abort('Stopped before changing anything.');
-
-    const joined = await joinWifi(login.client, {
-      ssid: home.ssid,
-      passphrase,
-      band: home.band,
-      wpaMode: home.wpaMode,
-      encryption: home.encryption,
-    });
-    say('Wi-Fi details sent. The camera is switching networks.');
-    say(`(Camera accepted: ${JSON.stringify(joined.accepted)} after ${joined.attempts} tries.)`);
-
-    await returnHome(autoSwitch, homeProfile);
-    onCameraNetwork = false;
-
-    say('Waiting for the camera to join your home network (up to 2 minutes)');
-    const sameCamera = (d: DiscoveredDevice) =>
-      (cam.deviceId !== '' && d.deviceId === cam.deviceId) || (cam.mac !== '' && d.mac === cam.mac);
-    const onHome = await waitForCamera(sameCamera, 120, []);
-    say('');
-    if (!onHome) {
-      throw new Abort(
-        'The camera didn’t show up. Check the Wi-Fi password and that the network is 2.4 GHz, then reset and try again.',
-      );
-    }
-    say(`The camera is on your network at ${onHome.host}.`);
-
-    const homeLogin = await findWorkingLogin({ host: onHome.host, apiPort }, [login.candidate]);
-    if (!homeLogin) throw new Abort('The camera stopped accepting the setup login.');
-    try {
-      const zone = process.env['KASA_TIMEZONE'] || hostTimeZone();
-      const result = await finishSetup(homeLogin.client, {
-        alias,
-        timeZone: cameraTimeZone(zone),
-        showTime: true,
-        ...(bind && acct ? { bindAccount: acct } : {}),
-      });
-      if (result.timeZoneSet) say(`Camera clock set to ${zone}, with the time shown on the video.`);
-      for (const w of result.warnings) say(`Skipped ${w}`);
-      if (result.bound) say(`Linked to your account (password sent as ${result.bindPassword}).`);
-    } catch (err) {
-      if (err instanceof LinkieError) {
-        say(`\nLinking to your account failed: ${err.message}`);
-        say('The camera is on your Wi-Fi and works locally with the setup login.');
-      } else {
-        throw err;
-      }
-    }
-
-    const finalLogin = await findWorkingLogin({ host: onHome.host, apiPort }, setupLogins(true));
-    if (!finalLogin) throw new Abort('Setup finished but no known login works now.');
-    say(`Camera login is now: ${finalLogin.candidate.label}.`);
-
-    const envPath = process.env['ENV_FILE'] ?? path.join(findRepoRoot() ?? process.cwd(), '.env');
-    // Kasa Home finds the camera by itself and follows it if its address
-    // changes, so no address is saved. An old pinned KASA_HOST is cleared.
-    const values: Record<string, string> = {};
-    if (process.env['KASA_HOST']) values['KASA_HOST'] = '';
-    if (finalLogin.candidate.label !== 'your Kasa account') {
-      values['KASA_USERNAME'] = finalLogin.candidate.username;
-      values['KASA_PASSWORD'] = finalLogin.candidate.password;
-    }
-    if (Object.keys(values).length > 0) {
-      const what = Object.keys(values)
-        .map((k) => (values[k] === '' ? `clear ${k}` : `set ${k}`))
-        .join(', ');
-      say(`\nUpdate ${envPath} (${what})?`);
-      if (values['KASA_USERNAME']) say('This replaces the Kasa login currently saved there.');
-      if (await confirm('Save?')) {
-        updateEnvFile(envPath, values);
-        say('Saved.');
-      }
-    }
-    say('\nDone. Restart Kasa Home so it picks up the camera (it finds it automatically).');
-  } finally {
-    if (onCameraNetwork) await returnHome(autoSwitch, homeProfile).catch(() => undefined);
+    home = { ssid, open: false };
   }
+  const passphrase = home.open ? '' : await askHidden(`Password for ${home.ssid}:`);
+  const alias = await ask('Camera name:', ready.camera?.alias || 'nursery');
+
+  say(`\nThe camera will join "${home.ssid}"${bind ? ' and be linked to your account' : ''}.`);
+  if (!(await confirm('Go ahead?'))) {
+    await stop(job, switcher);
+    throw new Abort('Stopped before changing anything.');
+  }
+  job.answer({ type: 'wifi', ssid: home.ssid, passphrase, alias });
+  orThrow(await reach(job, ['done']));
+
+  const camera = saved!;
+  const envPath = process.env['ENV_FILE'] ?? path.join(findRepoRoot() ?? process.cwd(), '.env');
+  // Kasa Home finds the camera by itself and follows it if its address
+  // changes, so no address is saved. An old pinned KASA_HOST is cleared.
+  const values: Record<string, string> = {};
+  if (process.env['KASA_HOST']) values['KASA_HOST'] = '';
+  const isAccount = acct && camera.username === acct.username && camera.password === acct.password;
+  if (!isAccount) {
+    values['KASA_USERNAME'] = camera.username;
+    values['KASA_PASSWORD'] = camera.password;
+  }
+  if (Object.keys(values).length > 0) {
+    const what = Object.keys(values)
+      .map((k) => (values[k] === '' ? `clear ${k}` : `set ${k}`))
+      .join(', ');
+    say(`\nUpdate ${envPath} (${what})?`);
+    if (values['KASA_USERNAME']) say('This replaces the Kasa login currently saved there.');
+    if (await confirm('Save?')) {
+      updateEnvFile(envPath, values);
+      say('Saved.');
+    }
+  }
+  say('\nDone. Restart Kasa Home so it picks up the camera (it finds it automatically).');
+}
+
+/** Stop the job; cancel() only switches back by itself with nmcli. */
+async function stop(job: Onboarding, switcher: WifiSwitcher): Promise<void> {
+  await job.cancel();
+  if (!switcher.auto) await switcher.returnHome();
 }
 
 main()

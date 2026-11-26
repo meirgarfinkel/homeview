@@ -3,6 +3,7 @@ import {
   createHostAllowlist,
   createIpAllowlist,
   hostnameOf,
+  isLoopback,
   isPrivateAddress,
   isSameOrigin,
   normalizeIp,
@@ -48,6 +49,15 @@ describe('IP allowlist', () => {
     expect(normalizeIp('::ffff:192.168.0.1')).toBe('192.168.0.1');
     expect(normalizeIp('fe80::1%eth0')).toBe('fe80::1');
   });
+
+  it.each(['127.0.0.1', '::1', '::ffff:127.0.0.1', '127.8.9.10'])(
+    'treats %s as this computer',
+    (ip) => expect(isLoopback(ip)).toBe(true),
+  );
+  it.each(['192.168.1.20', '10.0.0.7', '::ffff:192.168.1.20', undefined])(
+    'does not treat %s as this computer',
+    (ip) => expect(isLoopback(ip)).toBe(false),
+  );
 });
 
 describe('Host allowlist (DNS rebinding)', () => {

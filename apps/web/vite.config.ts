@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 
 const API_TARGET = process.env['API_URL'] ?? 'https://127.0.0.1:8090';
 
@@ -17,9 +17,5 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
-  },
-  test: {
-    include: ['src/**/*.test.ts'],
-    environment: 'node',
   },
 });

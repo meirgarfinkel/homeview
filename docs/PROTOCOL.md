@@ -172,7 +172,9 @@ also mentions `192.168.191.1` and `192.168.0.1`). Verified on a reset KC410S:
 Not yet tested: whether a camera that's never linked (local-only) streams
 video, and models other than the KC410S.
 
-`pnpm setup-camera` implements this flow. For other models it still tries a
+`pnpm setup-camera` and the desktop app's setup pages implement this flow. The
+desktop app drives it with the state machine in
+[apps/server/src/setup/onboarding.ts](../apps/server/src/setup/onboarding.ts). For other models it still tries a
 few fallbacks (another `key_index`, MD5 for `set_bind`) and reports which
 worked.
 

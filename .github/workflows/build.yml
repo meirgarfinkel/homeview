@@ -1,0 +1,152 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/tunnel/go.mod
+          cache-dependency-path: apps/tunnel/go.sum
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  package:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: Kasa-Home-Linux
+            files: |
+              apps/desktop/release/Kasa-Home-x86_64.AppImage
+              apps/desktop/release/kasa-home.deb
+          - os: windows-latest
+            artifact: Kasa-Home-Windows
+            files: |
+              apps/desktop/release/Kasa-Home-Setup.exe
+          - os: macos-latest
+            artifact: Kasa-Home-Mac
+            files: |
+              apps/desktop/release/Kasa-Home.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/tunnel/go.mod
+          cache-dependency-path: apps/tunnel/go.sum
+      - run: pnpm install --frozen-lockfile
+      # The desktop dist script does not build the web app it packages.
+      - run: pnpm --filter @kasa/web build
+      - run: pnpm --filter @kasa/desktop dist
+
+      - name: Self-test the AppImage (Linux)
+        timeout-minutes: 10
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth
+          chmod +x apps/desktop/release/Kasa-Home-x86_64.AppImage
+          # Extract and run, because runners have no FUSE. No sandbox,
+          # because runners block unprivileged user namespaces.
+          xvfb-run -a apps/desktop/release/Kasa-Home-x86_64.AppImage \
+            --appimage-extract-and-run --no-sandbox --self-test | tee self-test.log
+          # The extracted file list can land on the same line, so no ^ anchor.
+          grep -q 'SELF-TEST OK' self-test.log
+
+      - name: Self-test the unpacked app (Windows)
+        timeout-minutes: 10
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Run the packaged executable, with output redirected because a
+          # desktop app has no console of its own.
+          # Wait for the app itself, not with -Wait, which also waits for any
+          # child process that outlives it.
+          $p = Start-Process -FilePath 'apps/desktop/release/win-unpacked/Kasa Home.exe' `
+            -ArgumentList '--self-test' -PassThru -NoNewWindow `
+            -RedirectStandardOutput self-test.log -RedirectStandardError self-test.err
+          $null = $p.Handle  # keeps ExitCode readable after exit
+          $done = $p.WaitForExit(120000)
+          Get-Content self-test.log, self-test.err
+          if (-not $done) { $p.Kill($true); throw 'Self-test did not finish in 2 minutes' }
+          if ($p.ExitCode -ne 0) { throw "Self-test exited with $($p.ExitCode)" }
+          if (-not (Select-String -Path self-test.log -Pattern '^SELF-TEST OK' -Quiet)) { throw 'No SELF-TEST OK line' }
+
+      - name: Self-test the universal app (macOS)
+        timeout-minutes: 10
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app='apps/desktop/release/mac-universal/Kasa Home.app/Contents/MacOS/Kasa Home'
+          "$app" --self-test | tee self-test-native.log
+          grep -q '^SELF-TEST OK' self-test-native.log
+          # The same universal binary again as Intel, through Rosetta. macOS
+          # treats that as another program and would ask, with a dialog nobody
+          # can answer here, to let it read the key the first run stored.
+          security delete-generic-password -s 'Kasa Home Safe Storage' >/dev/null 2>&1 || true
+          if ! /usr/bin/pgrep -q oahd; then
+            softwareupdate --install-rosetta --agree-to-license
+          fi
+          arch -x86_64 "$app" --self-test | tee self-test-x64.log
+          grep -q '^SELF-TEST OK' self-test-x64.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches the desktop app version
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "The tag is ${GITHUB_REF_NAME} but apps/desktop/package.json says version ${version}. Tag v${version} instead, or change the version." >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l dist
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/Kasa-Home-x86_64.AppImage \
+            dist/kasa-home.deb \
+            dist/Kasa-Home-Setup.exe \
+            dist/Kasa-Home.dmg \
+            --title "Kasa Home ${GITHUB_REF_NAME}" --generate-notes

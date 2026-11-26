@@ -28,10 +28,11 @@ describe('config', () => {
   });
 
   it('accepts a password, or an explicit opt-out', () => {
-    expect(loadConfig({ ...base, VIEWER_PASSWORD: 'long enough' }).viewerPassword).toBe(
-      'long enough',
-    );
-    expect(loadConfig({ ...base, ALLOW_NO_PASSWORD: 'true' }).viewerPassword).toBeUndefined();
+    expect(loadConfig({ ...base, VIEWER_PASSWORD: 'long enough' }).viewer).toEqual({
+      kind: 'plain',
+      password: 'long enough',
+    });
+    expect(loadConfig({ ...base, ALLOW_NO_PASSWORD: 'true' }).viewer).toBeUndefined();
   });
 
   it('rejects short passwords and half-configured TLS', () => {
@@ -93,32 +94,56 @@ describe('localNetworkCidrs', () => {
 });
 
 describe('HTTPS listener with HTTP redirect', () => {
-  let app: FastifyInstance;
   let listener: DualListener;
   let port: number;
+  // Every test client connects from 127.0.0.1, so this listener treats
+  // them as another computer on the network.
+  let remoteListener: DualListener;
+  let remotePort: number;
 
-  beforeAll(async () => {
+  async function listen(isLocalClient?: (ip: string | undefined) => boolean) {
     const tls = await loadOrCreateCertificate(dir);
-    app = Fastify({ https: { key: tls.key, cert: tls.cert } });
+    const app: FastifyInstance = Fastify({ https: { key: tls.key, cert: tls.cert } });
     app.get('/hello', async () => ({ hi: true }));
-    listener = await listenHttpsWithRedirect(app, {
+    return listenHttpsWithRedirect(app, {
       host: '127.0.0.1',
       port: 0,
+      tls,
       allowClient: (ip) => ip === '127.0.0.1',
+      ...(isLocalClient ? { isLocalClient } : {}),
     });
-    port = listener.address().port;
-  });
-  afterAll(async () => listener.close());
+  }
 
-  const raw = (data: string) =>
+  beforeAll(async () => {
+    listener = await listen();
+    port = listener.address().port;
+    remoteListener = await listen(() => false);
+    remotePort = remoteListener.address().port;
+  });
+  afterAll(async () => {
+    await listener.close();
+    await remoteListener.close();
+  });
+
+  const raw = (data: string, to = port) =>
     new Promise<string>((resolve, reject) => {
-      const sock = net.connect(port, '127.0.0.1', () => sock.write(data));
+      const sock = net.connect(to, '127.0.0.1', () => sock.write(data));
       let out = '';
-      sock.on('data', (d) => (out += d.toString()));
+      sock.on('data', (d) => {
+        out += d.toString();
+        // A served response keeps the connection open; stop once it is complete.
+        const [head, body] = out.split('\r\n\r\n', 2);
+        const length = /\r\ncontent-length: (\d+)/i.exec(head ?? '')?.[1];
+        if (body !== undefined && length !== undefined && body.length >= Number(length)) {
+          sock.destroy();
+          resolve(out);
+        }
+      });
       sock.on('end', () => resolve(out));
       sock.on('close', () => resolve(out));
       sock.on('error', reject);
     });
+  const fromAnotherComputer = (data: string) => raw(data, remotePort);
 
   it('serves HTTPS', async () => {
     const body = await new Promise<string>((resolve, reject) => {
@@ -133,23 +158,70 @@ describe('HTTPS listener with HTTP redirect', () => {
     expect(JSON.parse(body)).toEqual({ hi: true });
   });
 
+  it('serves plain HTTP to this computer instead of redirecting', async () => {
+    const res = await raw('GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n');
+    expect(res).toMatch(/^HTTP\/1\.1 200/);
+    expect(res).toContain('{"hi":true}');
+  });
+
   it('redirects plain HTTP to the same host over HTTPS', async () => {
-    const res = await raw('GET /some/page?x=1 HTTP/1.1\r\nHost: 192.168.1.20:8090\r\n\r\n');
+    const res = await fromAnotherComputer(
+      'GET /some/page?x=1 HTTP/1.1\r\nHost: 192.168.1.20:8090\r\n\r\n',
+    );
     expect(res).toMatch(/^HTTP\/1\.1 308/);
-    expect(res).toContain(`Location: https://192.168.1.20:${port}/some/page?x=1\r\n`);
+    expect(res).toContain(`Location: https://192.168.1.20:${remotePort}/some/page?x=1\r\n`);
   });
 
   it.each(['evil.com/"><script>', 'a b', 'x\u0000y', ''])(
     'refuses to echo a Host header that is not a plain hostname (%j)',
     async (host) => {
-      const res = await raw(`GET / HTTP/1.1\r\nHost: ${host}\r\n\r\n`);
+      const res = await fromAnotherComputer(`GET / HTTP/1.1\r\nHost: ${host}\r\n\r\n`);
       expect(res).toMatch(/^HTTP\/1\.1 400/);
       expect(res).not.toContain('Location');
     },
   );
 
   it('never redirects to a host taken from the request line', async () => {
-    const res = await raw('GET http://evil.com/x HTTP/1.1\r\nHost: 192.168.1.20\r\n\r\n');
-    expect(res).toContain(`Location: https://192.168.1.20:${port}/\r\n`);
+    const res = await fromAnotherComputer(
+      'GET http://evil.com/x HTTP/1.1\r\nHost: 192.168.1.20\r\n\r\n',
+    );
+    expect(res).toContain(`Location: https://192.168.1.20:${remotePort}/\r\n`);
+  });
+});
+
+describe('swapping the app behind the HTTPS listener', () => {
+  const hello = (port: number) =>
+    new Promise<string>((resolve, reject) => {
+      https
+        .get({ host: '127.0.0.1', port, path: '/hello', rejectUnauthorized: false }, (res) => {
+          let b = '';
+          res.on('data', (d) => (b += d));
+          res.on('end', () => resolve(b));
+        })
+        .on('error', reject);
+    });
+
+  it("uses the new app's allowed networks for new connections", async () => {
+    const tls = await loadOrCreateCertificate(dir);
+    const build = (answer: string) => {
+      const app = Fastify({ https: { key: tls.key, cert: tls.cert } });
+      app.get('/hello', async () => answer);
+      return app;
+    };
+    // Built while this client's network was not one of the computer's.
+    const listener = await listenHttpsWithRedirect(build('old'), {
+      host: '127.0.0.1',
+      port: 0,
+      tls,
+      allowClient: () => false,
+    });
+    const { port } = listener.address();
+    try {
+      await expect(hello(port)).rejects.toThrow();
+      await listener.swap(build('new'), { allowClient: (ip) => ip === '127.0.0.1' });
+      expect(await hello(port)).toBe('new');
+    } finally {
+      await listener.close();
+    }
   });
 });

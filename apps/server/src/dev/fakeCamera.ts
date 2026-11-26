@@ -118,6 +118,13 @@ export interface FakeCameraOptions {
     networks?: FakeWifiNetwork[];
     /** Reject set_uplink when this field is present, to test the fallbacks. */
     rejectUplinkField?: string;
+    /**
+     * Accept set_uplink but never join that network: the camera stops
+     * answering discovery, as one given a wrong Wi-Fi password would.
+     */
+    ignoreUplink?: boolean;
+    /** Answer set_uplink this late, to test a cancel while it is in flight. */
+    uplinkReplyMs?: number;
   };
 }
 
@@ -161,6 +168,8 @@ export class FakeCamera {
   readonly connectionsOpened: number[] = [];
   onboardingStatus: string;
   uplink: FakeUplink | undefined;
+  /** Set once an ignored set_uplink sent the camera off its setup network. */
+  private lost = false;
   private streamServer: https.Server | undefined;
   private discoverySocket: dgram.Socket | undefined;
   private apiServer: https.Server | undefined;
@@ -176,6 +185,11 @@ export class FakeCamera {
     this.onboardingStatus = opts.setupMode ? 'none' : 'done';
     // A reset camera has its on-screen time off.
     this.osdTime = opts.setupMode ? 'off' : 'on';
+  }
+
+  /** After an ignored set_uplink: answer again, as if the camera found its way back. */
+  reappear(): void {
+    this.lost = false;
   }
 
   get activeStreams(): number {
@@ -211,6 +225,7 @@ export class FakeCamera {
     const socket = dgram.createSocket('udp4');
     this.discoverySocket = socket;
     socket.on('message', (msg, rinfo) => {
+      if (this.lost) return;
       try {
         const req = decryptJson<Record<string, Record<string, unknown>>>(msg);
         if (!req['system']?.['get_sysinfo']) return;
@@ -366,8 +381,13 @@ export class FakeCamera {
         out[module] = moduleOut;
       }
       // A real camera takes a while to answer a move.
-      const moved = this.commands.at(-1)?.method === 'set_move';
-      const delay = moved ? (this.opts.ptzMotor?.replyMs ?? 0) : 0;
+      const last = this.commands.at(-1)?.method;
+      const delay =
+        last === 'set_move'
+          ? (this.opts.ptzMotor?.replyMs ?? 0)
+          : last === 'set_uplink'
+            ? (this.opts.setupMode?.uplinkReplyMs ?? 0)
+            : 0;
       if (delay > 0) setTimeout(() => reply(out), delay);
       else reply(out);
     });
@@ -475,6 +495,10 @@ export class FakeCamera {
         ) {
           const name = this.opts.setupMode.rejectUplinkField;
           return { err_code: -31006, err_msg: `The parameter [${name}] error.` };
+        }
+        if (this.opts.setupMode?.ignoreUplink) {
+          this.lost = true;
+          return ok;
         }
         this.uplink = {
           ssid: field('ssid'),

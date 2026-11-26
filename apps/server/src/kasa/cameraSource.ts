@@ -122,17 +122,21 @@ export class CameraSource extends EventEmitter<CameraSourceEvents> {
 
     try {
       const res = await this.open(abort.signal);
-      if (!this.running) {
+      // Stopped, or replaced by a newer connection, while this one opened.
+      if (!this.running || this.abort !== abort) {
         res.close();
         return;
       }
       this.current = res;
       await this.pump(res);
+      if (this.abort !== abort) return;
       // Stream ended cleanly (camera closed it). Reconnect promptly.
       if (this.running) logger.info('Camera stream ended; reconnecting');
       this.scheduleRetry(BACKOFF_MS[0]!, 'Stream ended');
     } catch (err) {
-      if (!this.running) return;
+      // A stopped connection failing late (its stall timer, say) must not
+      // touch the run that replaced it.
+      if (!this.running || this.abort !== abort) return;
       const message = (err as Error).message;
       if (err instanceof StreamAuthError) {
         logger.error(message);
@@ -147,7 +151,7 @@ export class CameraSource extends EventEmitter<CameraSourceEvents> {
         this.scheduleRetry(delay, message);
       }
     } finally {
-      this.current = undefined;
+      if (this.abort === abort) this.current = undefined;
     }
   }
 
@@ -239,6 +243,11 @@ export class CameraSource extends EventEmitter<CameraSourceEvents> {
       parser.once('end', () => finish());
       parser.once('error', (err) => finish(err));
       res.body.once('error', (err) => parser.destroy(err));
+      // close() destroys the body, which a pipe doesn't pass on: end here so
+      // the stall timer of a closed stream can't fire later.
+      res.body.once('close', () => {
+        if (!parser.destroyed && !parser.writableEnded) parser.end();
+      });
       res.body.pipe(parser);
     });
   }

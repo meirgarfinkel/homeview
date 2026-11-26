@@ -6,7 +6,7 @@ import type { Logger } from '../logger.js';
 import { isPrivateAddress } from '../security/network.js';
 import { CameraSource } from './cameraSource.js';
 import { CameraCredentials } from './credentials.js';
-import { discover, isCamera, type DiscoveredDevice } from './discovery.js';
+import { discover, isCamera, type DiscoverOptions, type DiscoveredDevice } from './discovery.js';
 import { LinkieClient, type CameraSysinfo } from './linkieClient.js';
 import { PtzController } from './ptz.js';
 
@@ -15,9 +15,29 @@ export class CameraLocateError extends Error {
 }
 
 /**
+ * Discovery settings for this camera config. Probes sent to known addresses
+ * (KASA_HOST or the test targets) get a shorter wait than a broadcast.
+ */
+export function discoverOptions(cfg: Config['camera'], targets?: string[]): DiscoverOptions {
+  const to = targets ?? cfg.discoveryTargets;
+  return {
+    timeoutMs: to ? 1500 : 3000,
+    ...(to ? { targets: to } : {}),
+    ...(cfg.discoveryPort ? { port: cfg.discoveryPort } : {}),
+  };
+}
+
+/** Discovered cameras that may receive the login: LAN addresses only, unless allowed. */
+export async function discoverCameras(cfg: Config['camera']): Promise<DiscoveredDevice[]> {
+  const found = await discover(discoverOptions(cfg, cfg.host ? [cfg.host] : undefined));
+  return found.filter((d) => isCamera(d) && (cfg.allowPublicHost || isPrivateAddress(d.host)));
+}
+
+/**
  * Work out which IP to talk to. With KASA_HOST set, use it (after checking
- * it is a LAN address); otherwise broadcast discovery and pick the camera,
- * by KASA_ALIAS if several answer.
+ * it is a LAN address); otherwise broadcast discovery and pick the camera
+ * by its saved name (KASA_ALIAS). When only one camera answers, it is used
+ * even if its name changed.
  */
 export async function locateCamera(
   cfg: Config['camera'],
@@ -32,12 +52,12 @@ export async function locateCamera(
       );
     }
     // Unauthenticated sysinfo tells us the expected password encoding.
-    const [device] = await discover({ targets: [address], timeoutMs: 1500 }).catch(() => []);
+    const [device] = await discover(discoverOptions(cfg, [address])).catch(() => []);
     return { host: address, ...(device ? { device } : {}) };
   }
 
   logger.info('KASA_HOST not set; searching the network for Kasa cameras');
-  const cameras = (await discover({ timeoutMs: 3000 })).filter(isCamera);
+  const cameras = (await discover(discoverOptions(cfg))).filter(isCamera);
   if (cameras.length === 0) {
     throw new CameraLocateError(
       'No Kasa camera answered discovery. Make sure it is powered on and on the same network, or set KASA_HOST.',
@@ -46,12 +66,18 @@ export async function locateCamera(
   let chosen = cameras[0]!;
   if (cfg.alias) {
     const match = cameras.find((c) => c.alias.toLowerCase() === cfg.alias!.toLowerCase());
-    if (!match) {
+    if (!match && cameras.length === 1) {
+      // Renamed in the Kasa app since it was saved. With one camera there is no doubt.
+      logger.warn(
+        { saved: cfg.alias, found: chosen.alias, host: chosen.host },
+        'The camera has a new name; using the only camera found',
+      );
+    } else if (!match) {
       throw new CameraLocateError(
         `No camera named "${cfg.alias}". Found: ${cameras.map((c) => `${c.alias} (${c.host})`).join(', ')}`,
       );
     }
-    chosen = match;
+    if (match) chosen = match;
   } else if (cameras.length > 1) {
     logger.warn(
       { cameras: cameras.map((c) => ({ alias: c.alias, host: c.host })) },
@@ -74,6 +100,11 @@ export class Camera {
   constructor(host: string, cfg: Config, logger: Logger, device?: DiscoveredDevice) {
     this._host = host;
     const cam = cfg.camera;
+    if (!cam.username || !cam.password) {
+      throw new CameraLocateError(
+        'No camera login yet. Set KASA_USERNAME and KASA_PASSWORD in .env, or finish setup in the app.',
+      );
+    }
     this.credentials = new CameraCredentials(cam.username, cam.password, cam.passwordEncoding);
     this.credentials.applyCipherOptions(device?.sysinfo.c_opt);
     const tls = { pinnedSha256: cam.certSha256 };

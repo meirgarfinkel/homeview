@@ -10,3 +10,8 @@ playwright-report/
 test-results/
 .cache/
 data/
+
+# Local scratch: git worktrees and plan-execution workspaces
+.worktrees/
+.superpowers/
+apps/desktop/release/

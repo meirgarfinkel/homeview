@@ -1,4 +1,4 @@
-import { BinaryKind, LIVE_WS_PATH, type ServerMessage } from '@kasa/shared';
+import { BinaryKind, DEVICE_REMOVED_CLOSE, LIVE_WS_PATH, type ServerMessage } from '@kasa/shared';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed';
 
@@ -8,6 +8,10 @@ export interface LiveHandlers {
   onVideoFragment(data: Uint8Array): void;
   onAudio(data: Uint8Array): void;
   onConnection(state: ConnectionState): void;
+  /** The socket closed before it ever opened, which is how a refused sign-in looks. */
+  onRefused?(): void;
+  /** The server closed the socket because this phone was removed from remote access. */
+  onDeviceRemoved?(): void;
 }
 
 /** One WebSocket to /api/live with automatic reconnect. */
@@ -38,8 +42,10 @@ export class LiveConnection {
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     this.handlers.onConnection('connecting');
+    let opened = false;
 
     ws.onopen = () => {
+      opened = true;
       this.attempt = 0;
       this.handlers.onConnection('open');
     };
@@ -66,11 +72,13 @@ export class LiveConnection {
           break;
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       if (this.ws !== ws) return;
       this.ws = undefined;
       this.handlers.onConnection('closed');
       if (this.stopped) return;
+      if (event.code === DEVICE_REMOVED_CLOSE) this.handlers.onDeviceRemoved?.();
+      else if (!opened) this.handlers.onRefused?.();
       const delay = Math.min(10_000, 500 * 2 ** this.attempt++);
       this.retry = setTimeout(() => this.open(), delay);
     };

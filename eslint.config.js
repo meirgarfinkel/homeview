@@ -4,7 +4,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'data/**'] },
+  { ignores: ['**/dist/**', '**/release/**', '**/node_modules/**', '**/coverage/**', 'data/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -15,7 +15,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/server/**/*.ts', 'packages/**/*.ts', '*.js'],
+    files: [
+      'apps/server/**/*.{ts,mjs}',
+      'apps/desktop/**/*.ts',
+      'packages/**/*.ts',
+      '*.js',
+      'apps/tunnel/*.mjs',
+    ],
     languageOptions: { globals: globals.node },
   },
   {

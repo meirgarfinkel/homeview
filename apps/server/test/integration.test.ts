@@ -120,6 +120,34 @@ describe('CameraSource against the fake camera', () => {
     source.stop();
   });
 
+  it('does not leak a stream when restarted before the old one times out', async () => {
+    // The last viewer leaves (stop), a new one arrives seconds later (start).
+    // The stopped stream's stall timer must not fail the new run, start a
+    // second connection, or lose track of the live one. A lost connection
+    // keeps one of the camera's few viewer slots until the app quits.
+    const source = new CameraSource({
+      host: '127.0.0.1',
+      port: ports.streamPort,
+      path: '/https/stream/mixed',
+      credentials: new CameraCredentials(USER, PASS),
+      logger: silentLogger,
+      stallTimeoutMs: 400,
+    });
+    let connects = 0;
+    source.on('connected', () => connects++);
+    source.start();
+    await waitFor(() => connects === 1);
+    source.stop();
+    source.start();
+    await waitFor(() => connects === 2);
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(connects).toBe(2);
+    expect(source.state).toBe('live');
+    expect(fake.activeStreams).toBe(1);
+    source.stop();
+    await waitFor(() => fake.activeStreams === 0);
+  });
+
   it('surfaces wrong credentials as an error state', async () => {
     const source = new CameraSource({
       host: '127.0.0.1',
@@ -339,7 +367,13 @@ describe('viewer password', () => {
   it('requires a session for the API', async () => {
     expect((await app.inject({ url: '/api/camera', ...base })).statusCode).toBe(401);
     const session = await app.inject({ url: '/api/session', ...base });
-    expect(session.json()).toEqual({ authRequired: true, authenticated: false });
+    expect(session.json()).toEqual({
+      authRequired: true,
+      authenticated: false,
+      setupComplete: true,
+      local: false,
+      desktop: false,
+    });
   });
 
   it('logs in with the right password and sets an HttpOnly cookie', async () => {
@@ -382,5 +416,49 @@ describe('viewer password', () => {
     for (let i = 0; i < 12; i++) codes.push((await attempt()).statusCode);
     expect(codes.slice(0, 10).every((c) => c === 401)).toBe(true);
     expect(codes.slice(10)).toEqual([429, 429]);
+  });
+});
+
+describe('no viewer password and no ALLOW_NO_PASSWORD', () => {
+  it('fails closed even when handed a camera', async () => {
+    const env: Record<string, string> = {
+      KASA_HOST: '127.0.0.1',
+      KASA_USERNAME: USER,
+      KASA_PASSWORD: PASS,
+      KASA_API_PORT: String(ports.apiPort),
+      KASA_STREAM_PORT: String(ports.streamPort),
+      ALLOWED_CIDRS: '127.0.0.0/8,10.0.0.0/8',
+    };
+    const config = loadConfig(env, {});
+    const camera = new Camera('127.0.0.1', config, silentLogger);
+    const hub = new LiveHub({ source: camera.source, logger: silentLogger });
+    const app = await buildApp({ config, camera, hub, logger: silentLogger });
+    const lan = { remoteAddress: '10.0.0.5', headers: { host: '192.168.1.20:8080' } };
+    const local = { remoteAddress: '127.0.0.1', headers: { host: 'localhost:8080' } };
+    fake.commands.length = 0;
+    // Other computers are refused outright until setup is complete.
+    for (const [base, refused, loginRefused] of [
+      [lan, 403, 403],
+      [local, 401, 503],
+    ] as const) {
+      expect((await app.inject({ url: '/api/camera', ...base })).statusCode).toBe(refused);
+      const move = await app.inject({
+        method: 'POST',
+        url: '/api/ptz/move',
+        ...base,
+        payload: { direction: 'left' },
+      });
+      expect(move.statusCode).toBe(refused);
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/login',
+        ...base,
+        payload: { password: 'anything' },
+      });
+      expect(login.statusCode).toBe(loginRefused);
+    }
+    expect(fake.commands).toEqual([]);
+    hub.close();
+    await app.close();
   });
 });

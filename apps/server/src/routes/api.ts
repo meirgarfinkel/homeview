@@ -7,8 +7,11 @@ import {
   type PtzMoveMode,
   type SessionResponse,
   type StatusResponse,
+  LIVE_WS_PATH,
 } from '@kasa/shared';
-import type { AppDeps } from '../app.js';
+import type { AppDeps, CameraService } from '../app.js';
+import type { LiveHub } from '../media/liveHub.js';
+import { clientIp, isLocalRequest, isRemote, secureCookies } from '../security/remoteRequest.js';
 import { CameraAuthError, LinkieError } from '../kasa/linkieClient.js';
 import { CameraHttpError } from '../kasa/httpClient.js';
 import { PtzUnsupportedError } from '../kasa/ptz.js';
@@ -21,8 +24,15 @@ import {
 
 interface ApiDeps extends AppDeps {
   sessions: SessionManager | undefined;
+  /** ALLOW_NO_PASSWORD with no viewer password: everyone counts as signed in. */
+  openAccess: boolean;
   isAuthenticated(req: FastifyRequest): boolean;
 }
+
+export const notSetUp: ApiError = {
+  error: 'not-set-up',
+  message: "Kasa Home isn't set up yet. Finish setup on the computer running it.",
+};
 
 function sendError(reply: FastifyReply, err: unknown): FastifyReply {
   const body = (error: string, message: string): ApiError => ({ error, message });
@@ -45,15 +55,26 @@ function sendError(reply: FastifyReply, err: unknown): FastifyReply {
 
 export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Promise<void> {
   const { camera, hub, sessions } = deps;
-  const secure = Boolean(deps.tls);
   const limiter = new LoginRateLimiter();
 
   app.get('/api/health', async () => ({ ok: true }));
 
-  app.get('/api/session', async (req): Promise<SessionResponse> => ({
-    authRequired: Boolean(sessions),
-    authenticated: deps.isAuthenticated(req),
-  }));
+  app.get('/api/session', async (req): Promise<SessionResponse> => {
+    const local = isLocalRequest(req);
+    // Only this computer gets the phone address. req.ip is the socket peer (trustProxy is off).
+    const lanUrl = local ? deps.lanUrl?.() : undefined;
+    const remoteOn = deps.remote?.status().phase === 'on';
+    return {
+      authRequired: !deps.openAccess,
+      authenticated: deps.isAuthenticated(req),
+      setupComplete: deps.config.setupComplete,
+      local,
+      desktop: deps.desktop ?? deps.config.desktop,
+      ...(isRemote(req) ? { remote: true } : {}),
+      ...(remoteOn ? { remoteOn: true } : {}),
+      ...(lanUrl ? { lanUrl } : {}),
+    };
+  });
 
   app.post<{ Body: { password: string } }>(
     '/api/login',
@@ -68,29 +89,52 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
       },
     },
     async (req, reply) => {
-      if (!sessions) return reply.code(204).send();
-      if (!limiter.hit(req.ip)) {
+      if (!sessions)
+        return deps.openAccess ? reply.code(204).send() : reply.code(503).send(notSetUp);
+      const ip = clientIp(req);
+      if (!limiter.hit(ip)) {
         return reply
           .code(429)
           .send({ error: 'rate_limited', message: 'Too many attempts. Try again later.' });
       }
-      if (!sessions.checkPassword(req.body.password)) {
-        req.log.warn({ ip: req.ip }, 'Failed viewer login');
+      if (!(await sessions.checkPassword(req.body.password))) {
+        req.log.warn({ ip }, 'Failed viewer login');
         return reply.code(401).send({ error: 'bad_password', message: 'Wrong password' });
       }
-      limiter.reset(req.ip);
+      limiter.reset(ip);
       const { token, expires } = sessions.issue();
       return reply
-        .header('Set-Cookie', sessionCookie(token, expires, secure))
+        .header('Set-Cookie', sessionCookie(token, expires, secureCookies(req)))
         .code(204)
         .send();
     },
   );
 
-  app.post('/api/logout', async (_req, reply) =>
-    reply.header('Set-Cookie', clearedSessionCookie(secure)).code(204).send(),
+  app.post('/api/logout', async (req, reply) =>
+    reply
+      .header('Set-Cookie', clearedSessionCookie(secureCookies(req)))
+      .code(204)
+      .send(),
   );
 
+  if (camera && hub) {
+    registerCameraRoutes(app, camera, hub);
+    return;
+  }
+  // No camera yet: every camera route answers 503 with the reason.
+  const unavailable: ApiError = deps.config.setupComplete
+    ? { error: 'camera-offline', message: deps.cameraError ?? 'The camera is offline' }
+    : notSetUp;
+  for (const url of ['/api/status', '/api/camera', '/api/ptz/*', LIVE_WS_PATH]) {
+    app.route({
+      method: ['GET', 'POST'],
+      url,
+      handler: (_req, reply) => reply.code(503).send(unavailable),
+    });
+  }
+}
+
+function registerCameraRoutes(app: FastifyInstance, camera: CameraService, hub: LiveHub): void {
   app.get('/api/status', async (): Promise<StatusResponse> => ({
     stream: hub.stats(),
     ptz: camera.ptz.capability,

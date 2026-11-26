@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { hashPassword } from '../src/security/passwordHash.js';
 import {
   LoginRateLimiter,
+  passwordCheckFromHash,
+  passwordCheckFromPlain,
   parseCookies,
   SESSION_TTL_MS,
   SessionManager,
 } from '../src/security/session.js';
 
 describe('SessionManager', () => {
-  const sessions = new SessionManager('hunter2', 'a'.repeat(32));
+  const sessions = new SessionManager(passwordCheckFromPlain('hunter2'), 'a'.repeat(32));
 
-  it('checks the password', () => {
-    expect(sessions.checkPassword('hunter2')).toBe(true);
-    expect(sessions.checkPassword('hunter3')).toBe(false);
-    expect(sessions.checkPassword('')).toBe(false);
+  it('checks the password', async () => {
+    expect(await sessions.checkPassword('hunter2')).toBe(true);
+    expect(await sessions.checkPassword('hunter3')).toBe(false);
+    expect(await sessions.checkPassword('')).toBe(false);
   });
 
   it('issues tokens that verify until they expire', () => {
@@ -33,7 +36,23 @@ describe('SessionManager', () => {
 
   it('invalidates sessions when the password changes', () => {
     const { token } = sessions.issue();
-    expect(new SessionManager('other', 'a'.repeat(32)).verify(token)).toBe(false);
+    expect(new SessionManager(passwordCheckFromPlain('other'), 'a'.repeat(32)).verify(token)).toBe(
+      false,
+    );
+  });
+
+  it('works from a stored hash, and a new hash logs everyone out', async () => {
+    const s = new SessionManager(
+      passwordCheckFromHash(await hashPassword('hunter22')),
+      'a'.repeat(32),
+    );
+    expect(await s.checkPassword('hunter22')).toBe(true);
+    const { token } = s.issue();
+    const other = new SessionManager(
+      passwordCheckFromHash(await hashPassword('hunter22')),
+      'a'.repeat(32),
+    );
+    expect(other.verify(token)).toBe(false);
   });
 });
 

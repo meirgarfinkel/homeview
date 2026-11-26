@@ -1,0 +1,62 @@
+appId: io.github.meirgarfinkel.kasahome
+productName: Kasa Home
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+extraResources:
+  - from: ../web/dist
+    to: web
+  - from: ../tunnel/bin/${os}
+    to: tunnel
+# Never upload from a build; the release workflow publishes the files.
+publish: null
+
+linux:
+  target: [AppImage, deb]
+  category: Video
+  executableName: kasa-home
+  maintainer: Meir Garfinkel <meirgarfinkel@users.noreply.github.com>
+  icon: icon.png
+appImage:
+  artifactName: Kasa-Home-x86_64.AppImage
+deb:
+  artifactName: kasa-home.deb
+  # Setting depends replaces electron-builder's defaults, so list them again.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libasound2t64 | libasound2
+    - libayatana-appindicator3-1 | libappindicator3-1
+
+win:
+  target: nsis
+  icon: icon.png
+nsis:
+  artifactName: Kasa-Home-Setup.exe
+  # One-click, per-user install: no install-mode page, so no path to a UAC
+  # administrator prompt. Installs under the user's own profile.
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+mac:
+  target:
+    target: dmg
+    arch: universal
+  icon: icon.png
+  identity: '-'
+  extendInfo:
+    LSUIElement: true
+dmg:
+  artifactName: Kasa-Home.dmg
