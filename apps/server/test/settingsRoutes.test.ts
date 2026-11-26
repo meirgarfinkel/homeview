@@ -244,6 +244,22 @@ describe('PUT /api/settings/stream-resolution', () => {
     expect(body.managedByEnv).toContain('streamResolution');
   });
 
+  it('keeps the choice when the camera login is saved again', async () => {
+    const settings = await completeSettings();
+    settings.save({ ...settings.load(), streamResolution: '1080P' });
+    const s = await start(settings);
+    const cookie = await login(s);
+    const res = await send(
+      s,
+      'PUT',
+      '/api/settings/camera',
+      { username: USER, password: PASS },
+      { cookie },
+    );
+    expect(res.status).toBe(200);
+    expect(settings.load().streamResolution).toBe('1080P');
+  });
+
   it('needs a session', async () => {
     const s = await start(await completeSettings());
     const res = await send(s, 'PUT', '/api/settings/stream-resolution', { resolution: '720P' });

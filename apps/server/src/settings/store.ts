@@ -54,6 +54,26 @@ export interface Settings {
   streamResolution?: StreamResolution;
 }
 
+/**
+ * The settings with a new or re-entered camera. The chosen video quality stays only for the same
+ * camera: a size one camera supports may be one the next can't stream.
+ */
+export function withCamera(saved: Settings, camera: CameraSettings): Settings {
+  const before = saved.camera;
+  const same =
+    before !== undefined &&
+    (before.kind ?? 'kasa') === (camera.kind ?? 'kasa') &&
+    ((camera.kind ?? 'kasa') === 'kasa'
+      ? before.alias === camera.alias
+      : JSON.stringify(before.onvif?.identity) === JSON.stringify(camera.onvif?.identity));
+  const { streamResolution, ...rest } = saved;
+  return {
+    ...rest,
+    ...(same && streamResolution !== undefined ? { streamResolution } : {}),
+    camera,
+  };
+}
+
 const onvifSchema = z.object({
   host: z.string().min(1),
   onvifPort: z.number().int().min(0).max(65535),
