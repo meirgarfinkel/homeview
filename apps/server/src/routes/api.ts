@@ -16,6 +16,7 @@ import { CameraAuthError, LinkieError } from '../kasa/linkieClient.js';
 import { CameraHttpError } from '../kasa/httpClient.js';
 import type { PtzControl } from '../camera/driver.js';
 import { PtzUnsupportedError } from '../kasa/ptz.js';
+import { OnvifAuthError, OnvifFaultError, OnvifUnreachableError } from '../onvif/soap.js';
 import {
   clearedSessionCookie,
   LoginRateLimiter,
@@ -46,6 +47,15 @@ function sendError(reply: FastifyReply, err: unknown): FastifyReply {
   if (err instanceof CameraHttpError) {
     const code = err.code === 'timeout' ? 504 : 502;
     return reply.code(code).send(body('camera_unreachable', `Camera unreachable: ${err.message}`));
+  }
+  if (err instanceof OnvifAuthError) {
+    return reply.code(502).send(body('camera_auth', err.message));
+  }
+  if (err instanceof OnvifUnreachableError) {
+    return reply.code(504).send(body('camera_unreachable', `Camera unreachable: ${err.message}`));
+  }
+  if (err instanceof OnvifFaultError) {
+    return reply.code(502).send(body('camera_error', err.message));
   }
   if (err instanceof LinkieError) {
     return reply.code(502).send(body('camera_error', err.message));
