@@ -202,7 +202,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       try {
         const found = located ?? (await locate(config, logger));
         device = found.device;
-        camera = createDriver(config, logger, found);
+        camera = await createDriver(config, logger, found);
         hub = new LiveHub({
           source: camera.source,
           logger: logger.child({ component: 'hub' }),

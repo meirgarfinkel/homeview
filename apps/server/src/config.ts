@@ -8,6 +8,8 @@ import {
   type PasswordCheck,
 } from './security/session.js';
 import type { Settings } from './settings/store.js';
+import type { CameraKind } from '@kasa/shared';
+import type { OnvifCameraConfig } from './camera/onvifDriver.js';
 
 /** Treat empty strings from .env files as "not set". */
 const optionalString = z.preprocess(
@@ -126,6 +128,10 @@ export interface Config {
     discoveryTargets: string[] | undefined;
     /** Discovery port instead of 9999. For tests. */
     discoveryPort: number | undefined;
+    /** Which kind of camera; the environment's camera settings are Kasa only. */
+    kind: CameraKind;
+    /** A standard camera's address and login, when kind is 'onvif'. */
+    onvif: OnvifCameraConfig | undefined;
   };
   idleDisconnectMs: number;
   ptz: { enabled: boolean; stepSpeed: number };
@@ -187,6 +193,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
   const loginFromEnv = e.KASA_USERNAME !== undefined || e.KASA_PASSWORD !== undefined;
   const username = loginFromEnv ? e.KASA_USERNAME : settings?.camera?.username;
   const password = loginFromEnv ? e.KASA_PASSWORD : settings?.camera?.password;
+  const kind: CameraKind = loginFromEnv ? 'kasa' : (settings?.camera?.kind ?? 'kasa');
+  const saved = settings?.camera?.onvif;
+  const onvif: OnvifCameraConfig | undefined =
+    kind === 'onvif' && saved && username && password
+      ? { ...saved, username, password }
+      : undefined;
+  const cameraReady = kind === 'onvif' ? onvif !== undefined : Boolean(username && password);
   return {
     host: e.HOST,
     port: e.PORT,
@@ -195,7 +208,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
     allowedHosts: e.ALLOWED_HOSTS,
     viewer,
     allowNoPassword: e.ALLOW_NO_PASSWORD,
-    setupComplete: Boolean(viewer || e.ALLOW_NO_PASSWORD) && Boolean(username && password),
+    setupComplete: Boolean(viewer || e.ALLOW_NO_PASSWORD) && cameraReady,
     desktop: false,
     fromEnv: { viewerPassword: Boolean(e.VIEWER_PASSWORD), camera: loginFromEnv },
     sessionSecret: e.SESSION_SECRET,
@@ -216,6 +229,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
       timeZone: e.KASA_SYNC_TIMEZONE ? (e.KASA_TIMEZONE ?? hostTimeZone()) : undefined,
       discoveryTargets: e.KASA_DISCOVERY_TARGETS.length > 0 ? e.KASA_DISCOVERY_TARGETS : undefined,
       discoveryPort: e.KASA_DISCOVERY_PORT,
+      kind,
+      onvif,
     },
     idleDisconnectMs: e.IDLE_DISCONNECT_SECONDS * 1000,
     ptz: { enabled: e.PTZ_ENABLED, stepSpeed: e.PTZ_STEP_SPEED },

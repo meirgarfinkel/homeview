@@ -40,6 +40,51 @@ describe('SettingsStore', () => {
     expect(readFileSync(store.file, 'utf8')).not.toContain('pw-123');
   });
 
+  it('a settings file without kind loads as kasa', () => {
+    const dir = tmp();
+    // The shape every settings file had before standard cameras.
+    writeFileSync(
+      path.join(dir, 'settings.json'),
+      JSON.stringify({
+        viewerPasswordHash: 'scrypt$1$a$b',
+        camera: {
+          username: 'a@b.c',
+          passwordProtected: 'pw',
+          protector: 'plain',
+          localOnly: false,
+        },
+      }),
+    );
+    const loaded = new SettingsStore(dir, undefined, silentLogger).load();
+    expect(loaded.camera).toEqual({ username: 'a@b.c', password: 'pw', localOnly: false });
+    expect(loaded.camera?.kind ?? 'kasa').toBe('kasa');
+  });
+
+  it('an onvif camera round-trips with the password protected, never plain on disk', () => {
+    const dir = tmp();
+    const store = new SettingsStore(dir, reversing, silentLogger);
+    const value = {
+      viewerPasswordHash: 'scrypt$1$a$b',
+      camera: {
+        kind: 'onvif' as const,
+        username: 'admin',
+        password: 'onvif-secret-9',
+        localOnly: false,
+        onvif: {
+          host: '192.0.2.20',
+          onvifPort: 8000,
+          profileToken: 'main',
+          identity: { endpointId: 'urn:uuid:1', serial: 'SN-1', mac: '00:11:22:33:44:55' },
+        },
+      },
+    };
+    store.save(value);
+    expect(new SettingsStore(dir, reversing, silentLogger).load()).toEqual(value);
+    const raw = readFileSync(store.file, 'utf8');
+    expect(raw).not.toContain('onvif-secret-9');
+    expect(JSON.parse(raw).camera).toMatchObject({ kind: 'onvif', onvif: { host: '192.0.2.20' } });
+  });
+
   it('keeps a corrupt file as settings.json.broken and starts empty', () => {
     const dir = tmp();
     writeFileSync(path.join(dir, 'settings.json'), '{"camera": {"user');

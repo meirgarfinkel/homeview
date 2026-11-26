@@ -23,6 +23,37 @@ describe('config with settings', () => {
     expect(c.camera).toMatchObject({ username: 'u@x', password: 'p', alias: 'Nursery' });
   });
 
+  it('config marks setup complete for an onvif camera', () => {
+    const onvif = { host: '192.0.2.20', onvifPort: 80, identity: { serial: 'SN-1' } };
+    const c = loadConfig(
+      {},
+      {
+        viewerPasswordHash: 'scrypt$1$a$b',
+        camera: { kind: 'onvif', username: 'admin', password: 'pw', localOnly: false, onvif },
+      },
+    );
+    expect(c.setupComplete).toBe(true);
+    expect(c.camera.kind).toBe('onvif');
+    expect(c.camera.onvif).toEqual({ ...onvif, username: 'admin', password: 'pw' });
+  });
+
+  it('an onvif camera without its address is not set up', () => {
+    const c = loadConfig(
+      {},
+      {
+        viewerPasswordHash: 'scrypt$1$a$b',
+        camera: { kind: 'onvif', username: 'admin', password: 'pw', localOnly: false },
+      },
+    );
+    expect(c.setupComplete).toBe(false);
+  });
+
+  it('a kasa camera has kind kasa and no onvif part', () => {
+    const c = loadConfig({}, { camera: { username: 'u', password: 'p', localOnly: false } });
+    expect(c.camera.kind).toBe('kasa');
+    expect(c.camera.onvif).toBeUndefined();
+  });
+
   it('lets environment variables override settings', () => {
     const c = loadConfig(
       { KASA_USERNAME: 'env@x', KASA_PASSWORD: 'envpw', VIEWER_PASSWORD: 'long enough' },

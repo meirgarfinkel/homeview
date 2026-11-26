@@ -10,6 +10,7 @@ import {
   writeSync,
 } from 'node:fs';
 import path from 'node:path';
+import type { CameraKind } from '@kasa/shared';
 import { z } from 'zod';
 import type { Logger } from '../logger.js';
 
@@ -26,10 +27,42 @@ export const plainProtector: SecretProtector = {
   decrypt: (stored) => stored,
 };
 
+/** Where a standard (ONVIF/RTSP) camera is and how to tell it's the same one. */
+export interface OnvifSettings {
+  host: string;
+  onvifPort: number;
+  profileToken?: string;
+  /** A typed-in stream address; ONVIF isn't used when it's set. */
+  rtspUrl?: string;
+  identity: { endpointId?: string; serial?: string; mac?: string };
+}
+
+export interface CameraSettings {
+  /** Missing means 'kasa' (every file saved before standard cameras). */
+  kind?: CameraKind;
+  username: string;
+  password: string;
+  alias?: string;
+  localOnly: boolean;
+  onvif?: OnvifSettings;
+}
+
 export interface Settings {
   viewerPasswordHash?: string;
-  camera?: { username: string; password: string; alias?: string; localOnly: boolean };
+  camera?: CameraSettings;
 }
+
+const onvifSchema = z.object({
+  host: z.string().min(1),
+  onvifPort: z.number().int().min(0).max(65535),
+  profileToken: z.string().optional(),
+  rtspUrl: z.string().optional(),
+  identity: z.object({
+    endpointId: z.string().optional(),
+    serial: z.string().optional(),
+    mac: z.string().optional(),
+  }),
+});
 
 const diskSchema = z.object({
   viewerPasswordHash: z.string().optional(),
@@ -40,6 +73,8 @@ const diskSchema = z.object({
       protector: z.enum(['safeStorage', 'plain']),
       alias: z.string().optional(),
       localOnly: z.boolean(),
+      kind: z.enum(['kasa', 'onvif']).optional(),
+      onvif: onvifSchema.optional(),
     })
     .optional(),
 });
@@ -88,10 +123,12 @@ export class SettingsStore {
         );
       } else {
         settings.camera = {
+          ...(cam.kind !== undefined ? { kind: cam.kind } : {}),
           username: cam.username,
           password,
           ...(cam.alias !== undefined ? { alias: cam.alias } : {}),
           localOnly: cam.localOnly,
+          ...(cam.onvif !== undefined ? { onvif: withoutUndefined(cam.onvif) } : {}),
         };
       }
     }
@@ -115,6 +152,8 @@ export class SettingsStore {
               protector: this.protector.kind,
               ...(next.camera.alias !== undefined ? { alias: next.camera.alias } : {}),
               localOnly: next.camera.localOnly,
+              ...(next.camera.kind !== undefined ? { kind: next.camera.kind } : {}),
+              ...(next.camera.onvif !== undefined ? { onvif: next.camera.onvif } : {}),
             },
           }),
     };
@@ -157,6 +196,20 @@ export class SettingsStore {
       this.logger?.error({ err }, 'the settings file is damaged and could not be kept');
     }
   }
+}
+
+/** The ONVIF part as saved, without keys zod filled with undefined. */
+function withoutUndefined(o: z.infer<typeof onvifSchema>): OnvifSettings {
+  const identity = Object.fromEntries(
+    Object.entries(o.identity).filter(([, v]) => v !== undefined),
+  ) as OnvifSettings['identity'];
+  return {
+    host: o.host,
+    onvifPort: o.onvifPort,
+    ...(o.profileToken !== undefined ? { profileToken: o.profileToken } : {}),
+    ...(o.rtspUrl !== undefined ? { rtspUrl: o.rtspUrl } : {}),
+    identity,
+  };
 }
 
 /**

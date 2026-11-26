@@ -9,6 +9,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { LIVE_WS_PATH } from '@kasa/shared';
 import { accessUnits, FakeCamera, LoopingFrameProducer } from '../src/dev/fakeCamera.js';
+import { startFakeOnvif } from '../src/dev/fakeOnvif.js';
+import { startFakeRtsp } from '../src/dev/fakeRtsp.js';
+import { BASE_FAKE } from './onvif/fixtures.js';
 import { hashPassword } from '../src/security/passwordHash.js';
 import { CLOSE_GRACE_MS } from '../src/listen.js';
 import { lanAddress, startServer, type RunningServer } from '../src/server.js';
@@ -163,6 +166,69 @@ describe('startServer', () => {
     expect(camera.status).toBe(503);
     expect(await camera.json()).toMatchObject({ error: 'camera-offline' });
     await s.stop();
+  });
+});
+
+describe('a standard (ONVIF) camera', () => {
+  it('an onvif settings file starts an OnvifDriver against the fakes and /api/status reports live', async () => {
+    const rtsp = await startFakeRtsp({
+      video: 'h264',
+      username: BASE_FAKE.username,
+      password: BASE_FAKE.password,
+      auth: 'digest',
+      path: '/main',
+    });
+    const onvif = await startFakeOnvif({ ...BASE_FAKE, streamUri: rtsp.url });
+    const settings = new SettingsStore(tmp());
+    settings.save({
+      viewerPasswordHash: await hashPassword('lullaby-time'),
+      camera: {
+        kind: 'onvif',
+        username: BASE_FAKE.username,
+        password: BASE_FAKE.password,
+        localOnly: false,
+        onvif: {
+          host: '127.0.0.1',
+          onvifPort: Number(new URL(onvif.deviceUrl).port),
+          identity: { endpointId: BASE_FAKE.endpointId },
+        },
+      },
+    });
+    const s = await start({ ...quiet, KASA_DISCOVERY_TARGETS: '127.0.0.1' }, settings);
+    try {
+      expect(s.setupComplete()).toBe(true);
+      const login = await post(s, '/api/login', { password: 'lullaby-time' });
+      const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+
+      const camera = await fetch(`${s.localUrl}/api/camera`, { headers: { cookie } });
+      expect(camera.status).toBe(200);
+      expect(await camera.json()).toMatchObject({
+        kind: 'onvif',
+        model: 'FC-1',
+        resolution: '1920x1080',
+      });
+
+      const ws = new WebSocket(`${s.localUrl.replace('http', 'ws')}${LIVE_WS_PATH}`, {
+        origin: s.localUrl,
+        headers: { cookie },
+      });
+      ws.on('error', () => undefined);
+      let state = '';
+      for (let i = 0; i < 80 && state !== 'live'; i++) {
+        const status = (await fetch(`${s.localUrl}/api/status`, { headers: { cookie } }).then((r) =>
+          r.json(),
+        )) as { stream: { state: string } };
+        state = status.stream.state;
+        if (state !== 'live') await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(state).toBe('live');
+      expect(rtsp.connections).toBeGreaterThan(0);
+      ws.terminate();
+    } finally {
+      await s.stop();
+      await onvif.close();
+      await rtsp.close();
+    }
   });
 });
 
