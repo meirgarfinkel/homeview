@@ -230,23 +230,6 @@ button {
   }
 }
 
-.listen-cta {
-  position: absolute;
-  bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: 1px solid var(--accent-dim);
-  background: rgb(18 24 38 / 0.85);
-  backdrop-filter: blur(6px);
-  cursor: pointer;
-}
-
-.listen-cta:hover {
-  border-color: var(--accent);
-}
-
 .stage-meta {
   position: absolute;
   top: 12px;
@@ -594,8 +577,7 @@ input[type='text'] {
   vertical-align: -0.2em;
 }
 
-.btn,
-.listen-cta {
+.btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
