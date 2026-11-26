@@ -1,3 +1,4 @@
+import { AppLogo } from '../AppLogo';
 import { useEffect } from 'react';
 import { api } from '../../lib/api';
 
@@ -31,7 +32,7 @@ export function NotSetUp({ onSetUp }: { onSetUp(): void }) {
   return (
     <div className="login">
       <div className="panel login-card">
-        <span className="moon big" aria-hidden="true" />
+        <AppLogo big />
         <h1>HomeView</h1>
         <p>HomeView isn&apos;t set up yet. Finish setup on the computer it&apos;s installed on.</p>
       </div>

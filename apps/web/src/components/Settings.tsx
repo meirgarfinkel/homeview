@@ -4,7 +4,9 @@ import { useRestartWatch } from '../hooks/useRestartWatch';
 import { api } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { AwayFromHome } from './AwayFromHome';
-import { CameraSection, ChangeCamera } from './CameraSection';
+import { CameraSection, ChangeCamera, StreamChoice } from './CameraSection';
+import { ArrowIcon } from './Icons';
+import { VideoQuality } from './settings/VideoQuality';
 import { AutostartBox } from './setup/AutostartBox';
 import { Onboarding } from './setup/Onboarding';
 
@@ -13,7 +15,7 @@ const MIN_LENGTH = 8;
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="panel">
-      <h2>{title}</h2>
+      <h3>{title}</h3>
       {children}
     </section>
   );
@@ -105,7 +107,7 @@ function CameraLogin({ saved, fromEnv }: { saved: string | undefined; fromEnv: b
 
   if (fromEnv) {
     return (
-      <Section title="Camera">
+      <Section title="Camera login">
         <p className="hint">Set in .env</p>
       </Section>
     );
@@ -135,7 +137,7 @@ function CameraLogin({ saved, fromEnv }: { saved: string | undefined; fromEnv: b
   };
 
   return (
-    <Section title="Camera">
+    <Section title="Camera login">
       {choices ? (
         <>
           <p>More than one camera uses this login. Pick the one to watch.</p>
@@ -354,6 +356,95 @@ function UseAway() {
   );
 }
 
+type GroupId = 'camera' | 'video' | 'access' | 'app';
+
+interface Group {
+  id: GroupId;
+  label: string;
+  content: ReactNode;
+}
+
+/** The page's categories, in order, leaving out any with nothing to show. */
+function settingsGroups(
+  settings: SettingsResponse,
+  o: {
+    cameraFromEnv: boolean;
+    otherBrand: boolean;
+    phoneAway: boolean;
+    onChangeCamera(): void;
+    onSetUpCamera(): void;
+  },
+): Group[] {
+  const app = settings.local && settings.desktop;
+  const all: { id: GroupId; label: string; parts: ReactNode[] }[] = [
+    {
+      id: 'camera',
+      label: 'Camera',
+      parts: [
+        settings.local && settings.camera && !o.cameraFromEnv && (
+          <CameraSection key="in-use" camera={settings.camera} onChange={o.onChangeCamera} />
+        ),
+        !o.otherBrand && (
+          <CameraLogin key="login" saved={settings.camera?.username} fromEnv={o.cameraFromEnv} />
+        ),
+        settings.local && !o.otherBrand && (
+          <Section key="setup" title="Set up a new or reset camera">
+            <button className="btn btn-primary" type="button" onClick={o.onSetUpCamera}>
+              Set up a camera
+            </button>
+          </Section>
+        ),
+      ],
+    },
+    {
+      id: 'video',
+      label: 'Video',
+      parts: [
+        settings.camera && !o.otherBrand && (
+          <Section key="quality" title="Video quality">
+            <VideoQuality
+              saved={settings.streamResolution}
+              fromEnv={settings.managedByEnv.includes('streamResolution')}
+            />
+          </Section>
+        ),
+        settings.local && o.otherBrand && (
+          <Section key="stream" title="Stream">
+            <StreamChoice />
+          </Section>
+        ),
+      ],
+    },
+    {
+      id: 'access',
+      label: 'Access',
+      parts: [
+        <ViewerPassword key="viewer" fromEnv={settings.managedByEnv.includes('viewerPassword')} />,
+        app && <AwayFromHome key="away" />,
+        o.phoneAway && <UseAway key="use-away" />,
+      ],
+    },
+    {
+      id: 'app',
+      label: 'App',
+      parts: [
+        app && settings.autostart !== null && (
+          <Section key="autostart" title="Start when this computer starts">
+            <AutostartBox initial={settings.autostart} />
+          </Section>
+        ),
+        app && settings.version !== null && (
+          <UpdatesSection key="updates" version={settings.version} />
+        ),
+        app && <StopSection key="stop" />,
+      ],
+    },
+  ];
+  return all
+    .map(({ id, label, parts }) => ({ id, label, content: parts.filter(Boolean) }))
+    .filter((g) => g.content.length > 0);
+}
+
 export function Settings({
   onClose,
   phoneAway = false,
@@ -366,6 +457,7 @@ export function Settings({
   const [error, setError] = useState<string>();
   const [onboarding, setOnboarding] = useState(false);
   const [changing, setChanging] = useState(false);
+  const [selected, setSelected] = useState<GroupId>('camera');
 
   const load = useCallback(() => {
     api.settings().then(setSettings, (err: unknown) => setError(errorText(err)));
@@ -396,49 +488,63 @@ export function Settings({
 
   const cameraFromEnv = settings?.managedByEnv.includes('camera') ?? false;
   const otherBrand = settings?.camera?.kind === 'onvif';
+  const groups = settings
+    ? settingsGroups(settings, {
+        cameraFromEnv,
+        otherBrand,
+        phoneAway,
+        onChangeCamera: () => setChanging(true),
+        onSetUpCamera: () => setOnboarding(true),
+      })
+    : [];
+  const active = groups.some((g) => g.id === selected) ? selected : groups[0]?.id;
 
   return (
-    <div className="login settings">
+    <div className="settings">
       <div className="settings-page">
         <header className="settings-head">
-          <h1>Settings</h1>
-          <button className="btn" type="button" onClick={onClose}>
-            Back
+          <button
+            className="btn btn-icon"
+            type="button"
+            aria-label="Back"
+            title="Back"
+            onClick={onClose}
+          >
+            <ArrowIcon direction="left" />
           </button>
+          <h1>Settings</h1>
         </header>
         {error && <Failure text={error} />}
-        {settings && (
-          <>
-            <ViewerPassword fromEnv={settings.managedByEnv.includes('viewerPassword')} />
-            {settings.local && settings.camera && !cameraFromEnv && (
-              <CameraSection camera={settings.camera} onChange={() => setChanging(true)} />
-            )}
-            {!otherBrand && (
-              <CameraLogin saved={settings.camera?.username} fromEnv={cameraFromEnv} />
-            )}
-            {settings.local && !otherBrand && (
-              <Section title="Set up a new or reset camera">
+        {groups.length > 0 && (
+          <div className="settings-body">
+            <nav className="settings-nav" aria-label="Settings sections">
+              {groups.map((g) => (
                 <button
-                  className="btn btn-primary"
+                  key={g.id}
                   type="button"
-                  onClick={() => setOnboarding(true)}
+                  className="settings-nav-item"
+                  aria-current={g.id === active ? 'page' : undefined}
+                  onClick={() => setSelected(g.id)}
                 >
-                  Set up a camera
+                  {g.label}
                 </button>
-              </Section>
-            )}
-            {settings.local && settings.desktop && <AwayFromHome />}
-            {phoneAway && <UseAway />}
-            {settings.local && settings.desktop && settings.autostart !== null && (
-              <Section title="Start when this computer starts">
-                <AutostartBox initial={settings.autostart} />
-              </Section>
-            )}
-            {settings.local && settings.desktop && settings.version !== null && (
-              <UpdatesSection version={settings.version} />
-            )}
-            {settings.local && settings.desktop && <StopSection />}
-          </>
+              ))}
+            </nav>
+            <div className="settings-pane">
+              {groups.map((g) => (
+                <section
+                  key={g.id}
+                  className={`settings-group${g.id === active ? ' is-active' : ''}`}
+                  aria-labelledby={`settings-${g.id}`}
+                >
+                  <h2 id={`settings-${g.id}`} className="settings-group-title">
+                    {g.label}
+                  </h2>
+                  {g.content}
+                </section>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

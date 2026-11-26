@@ -16,6 +16,7 @@ import type {
   RemoteStatus,
   SessionResponse,
   SettingsResponse,
+  StreamResolution,
   SetupExistingResult,
   StatusResponse,
   UpdateCheckResult,
@@ -111,6 +112,8 @@ export const api = {
   cameraProfiles: () => request<OnvifProfilesResult>('/api/settings/camera-profiles'),
   setCameraProfile: (profileToken: string) =>
     post('/api/settings/camera-profile', { profileToken }),
+  setStreamResolution: (resolution: StreamResolution | null) =>
+    put('/api/settings/stream-resolution', { resolution }),
   setAutostart: (enabled: boolean) => put('/api/app/autostart', { enabled }),
   quit: () => post('/api/app/quit'),
   update: () => request<UpdateStatus>('/api/app/update'),

@@ -66,6 +66,13 @@ const PORT_ATTEMPTS = 10;
 const CAMERA_RETRY_MS = 30_000;
 
 /** This computer's address on the home network: a private IPv4 on an interface that isn't a container, VM or VPN one. */
+/** The same camera and login. The stream size may differ: a reload for it needs no new search. */
+export function sameCameraSettings(a: Config['camera'], b: Config['camera']): boolean {
+  const key = ({ streamPath: _p, streamResolution: _r, ...rest }: Config['camera']) =>
+    JSON.stringify(rest);
+  return key(a) === key(b);
+}
+
 export function lanAddress(
   interfaces: ReturnType<typeof os.networkInterfaces> = os.networkInterfaces(),
 ): string | undefined {
@@ -189,7 +196,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
    */
   const sameCameraAsNow = (config: Config): Located | undefined => {
     if (!current?.camera || !config.setupComplete) return undefined;
-    if (JSON.stringify(current.config.camera) !== JSON.stringify(config.camera)) return undefined;
+    if (!sameCameraSettings(current.config.camera, config.camera)) return undefined;
     return { host: current.camera.host, ...(current.device ? { device: current.device } : {}) };
   };
 

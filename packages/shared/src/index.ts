@@ -124,6 +124,10 @@ export interface ApiError {
 }
 
 /** Reply to GET /api/settings. It never holds a password. */
+/** Stream sizes the Settings page offers; null in a reply means the camera's default. */
+export const STREAM_RESOLUTIONS = ['2560x1440', '2304x1296', '1080P', '720P'] as const;
+export type StreamResolution = (typeof STREAM_RESOLUTIONS)[number];
+
 export interface SettingsResponse {
   camera: {
     kind: CameraKind;
@@ -140,8 +144,13 @@ export interface SettingsResponse {
   autostart: boolean | null;
   /** The desktop app's version. Null outside the desktop app. */
   version: string | null;
+  /**
+   * The stream size in use, from KASA_STREAM_RESOLUTION or the saved choice. Null is the camera's
+   * default. The environment may also give 360P.
+   */
+  streamResolution: StreamResolution | '360P' | null;
   /** Settings that environment variables set, which the page shows as read-only. */
-  managedByEnv: ('viewerPassword' | 'camera')[];
+  managedByEnv: ('viewerPassword' | 'camera' | 'streamResolution')[];
 }
 
 /** A camera found during setup. */

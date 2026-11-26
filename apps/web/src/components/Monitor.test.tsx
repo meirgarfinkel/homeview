@@ -49,3 +49,10 @@ it('turns sound on from the Sound panel, with no button over the video', () => {
   expect(screen.queryByText('Tap to listen')).toBeNull();
   expect(screen.getByRole('button', { name: 'Listen' })).toBeTruthy();
 });
+
+it('shows the HomeView icon beside the camera name', () => {
+  const { container } = render(<Monitor />);
+  const logo = container.querySelector('.topbar img.logo');
+  expect(logo?.getAttribute('src')).toBe('/favicon.svg');
+  expect(container.querySelector('.moon')).toBeNull();
+});

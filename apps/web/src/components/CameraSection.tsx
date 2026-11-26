@@ -13,7 +13,7 @@ type Camera = NonNullable<SettingsResponse['camera']>;
 function Panel({ children }: { children: ReactNode }) {
   return (
     <section className="panel">
-      <h2>Camera in use</h2>
+      <h3>Camera in use</h3>
       {children}
     </section>
   );
@@ -36,7 +36,6 @@ export function CameraSection({ camera, onChange }: { camera: Camera; onChange()
   return (
     <Panel>
       <p>{label}</p>
-      {other && <StreamChoice />}
       <button className="btn" type="button" onClick={onChange}>
         Change camera
       </button>
@@ -44,7 +43,8 @@ export function CameraSection({ camera, onChange }: { camera: Camera; onChange()
   );
 }
 
-function StreamChoice() {
+/** A standard camera's stream profiles to choose from. */
+export function StreamChoice() {
   const [list, setList] = useState<OnvifProfilesResult>();
   const [token, setToken] = useState<string>();
   const [error, setError] = useState<string>();

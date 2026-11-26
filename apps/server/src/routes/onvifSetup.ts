@@ -29,7 +29,7 @@ import { probeRtsp, VIDEO_FORMAT_UNSUPPORTED } from '../rtsp/rtspSource.js';
 import type { Logger } from '../logger.js';
 import { isLocalRequest } from '../security/remoteRequest.js';
 import { isPrivateAddress } from '../security/network.js';
-import type { OnvifSettings, SettingsStore } from '../settings/store.js';
+import { withCamera, type OnvifSettings, type SettingsStore } from '../settings/store.js';
 
 export interface OnvifSetupDeps {
   config: Config;
@@ -264,16 +264,15 @@ export function registerOnvifSetupRoutes(app: FastifyInstance, deps: OnvifSetupD
         ? wanted!
         : checked.result.picked;
       const saved = settings.load();
-      settings.save({
-        ...saved,
-        camera: {
+      settings.save(
+        withCamera(saved, {
           kind: 'onvif',
           username: req.body.username,
           password: req.body.password,
           localOnly: saved.camera?.localOnly ?? false,
           onvif: { ...checked.onvif, ...(checked.onvif.rtspUrl ? {} : { profileToken }) },
-        },
-      });
+        }),
+      );
       deps.reloadAfter(reply);
       const result: OnvifSaveResult = {
         saved: {

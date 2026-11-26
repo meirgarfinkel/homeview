@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { plainProtector, SettingsStore, type SecretProtector } from '../src/settings/store.js';
+import {
+  plainProtector,
+  SettingsStore,
+  withCamera,
+  type SecretProtector,
+} from '../src/settings/store.js';
 import { silentLogger } from './helpers.js';
 
 const dirs: string[] = [];
@@ -22,6 +27,18 @@ const reversing: SecretProtector = {
 };
 
 describe('SettingsStore', () => {
+  it('keeps the stream resolution across a save and load', () => {
+    const store = new SettingsStore(tmp(), undefined, silentLogger);
+    store.save({ streamResolution: '1080P' });
+    expect(store.load().streamResolution).toBe('1080P');
+  });
+
+  it('loads an older file without a stream resolution', () => {
+    const store = new SettingsStore(tmp(), undefined, silentLogger);
+    writeFileSync(store.file, JSON.stringify({ viewerPasswordHash: 'x' }));
+    expect(store.load()).toEqual({ viewerPasswordHash: 'x' });
+  });
+
   it('returns empty settings when there is no file', () => {
     expect(new SettingsStore(tmp(), undefined, silentLogger).load()).toEqual({});
   });
@@ -133,5 +150,37 @@ describe('SettingsStore', () => {
     const camera = { username: 'new@b.c', password: 'pw-456', localOnly: false };
     new SettingsStore(dir, plainProtector, silentLogger).save({ camera });
     expect(new SettingsStore(dir, undefined, silentLogger).load()).toEqual({ camera });
+  });
+});
+
+describe('withCamera', () => {
+  const kasa = { username: 'u', password: 'p', alias: 'Nursery', localOnly: false };
+  const saved = { viewerPasswordHash: 'h', camera: kasa, streamResolution: '2560x1440' as const };
+
+  it('keeps the video quality for a new login to the same camera', () => {
+    expect(withCamera(saved, { ...kasa, password: 'new' })).toEqual({
+      ...saved,
+      camera: { ...kasa, password: 'new' },
+    });
+  });
+
+  it('drops the video quality for a different camera', () => {
+    const next = withCamera(saved, { ...kasa, alias: 'Kitchen' });
+    expect(next.streamResolution).toBeUndefined();
+    expect(next.viewerPasswordHash).toBe('h');
+    expect(next.camera?.alias).toBe('Kitchen');
+  });
+
+  it('drops it when switching to another brand', () => {
+    const onvif = { host: '192.0.2.20', onvifPort: 80, identity: { serial: 'SN-1' } };
+    const next = withCamera(saved, { ...kasa, kind: 'onvif', onvif });
+    expect(next.streamResolution).toBeUndefined();
+  });
+
+  it('keeps it for the same standard camera at a new address', () => {
+    const onvif = { host: '192.0.2.20', onvifPort: 80, identity: { serial: 'SN-1' } };
+    const before = { ...saved, camera: { ...kasa, kind: 'onvif' as const, onvif } };
+    const next = withCamera(before, { ...before.camera, onvif: { ...onvif, host: '192.0.2.21' } });
+    expect(next.streamResolution).toBe('2560x1440');
   });
 });

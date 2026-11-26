@@ -1,3 +1,4 @@
+import { AppLogo } from '../AppLogo';
 import { useState, type FormEvent } from 'react';
 import { api } from '../../lib/api';
 import { errorText } from '../../lib/errors';
@@ -31,7 +32,7 @@ export function PasswordStep({ onNext }: { onNext(): void }) {
   return (
     <div className="login">
       <form className="panel login-card" onSubmit={submit}>
-        <span className="moon big" aria-hidden="true" />
+        <AppLogo big />
         <h1 ref={heading} tabIndex={-1}>
           Welcome to HomeView
         </h1>

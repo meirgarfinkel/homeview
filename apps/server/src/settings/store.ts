@@ -10,7 +10,7 @@ import {
   writeSync,
 } from 'node:fs';
 import path from 'node:path';
-import type { CameraKind } from '@kasa/shared';
+import { STREAM_RESOLUTIONS, type CameraKind, type StreamResolution } from '@kasa/shared';
 import { z } from 'zod';
 import type { Logger } from '../logger.js';
 
@@ -50,6 +50,28 @@ export interface CameraSettings {
 export interface Settings {
   viewerPasswordHash?: string;
   camera?: CameraSettings;
+  /** The stream size chosen in Settings. Missing means the camera's default. */
+  streamResolution?: StreamResolution;
+}
+
+/**
+ * The settings with a new or re-entered camera. The chosen video quality stays only for the same
+ * camera: a size one camera supports may be one the next can't stream.
+ */
+export function withCamera(saved: Settings, camera: CameraSettings): Settings {
+  const before = saved.camera;
+  const same =
+    before !== undefined &&
+    (before.kind ?? 'kasa') === (camera.kind ?? 'kasa') &&
+    ((camera.kind ?? 'kasa') === 'kasa'
+      ? before.alias === camera.alias
+      : JSON.stringify(before.onvif?.identity) === JSON.stringify(camera.onvif?.identity));
+  const { streamResolution, ...rest } = saved;
+  return {
+    ...rest,
+    ...(same && streamResolution !== undefined ? { streamResolution } : {}),
+    camera,
+  };
 }
 
 const onvifSchema = z.object({
@@ -66,6 +88,7 @@ const onvifSchema = z.object({
 
 const diskSchema = z.object({
   viewerPasswordHash: z.string().optional(),
+  streamResolution: z.enum(STREAM_RESOLUTIONS).optional(),
   camera: z
     .object({
       username: z.string(),
@@ -114,6 +137,9 @@ export class SettingsStore {
     if (parsed.viewerPasswordHash !== undefined) {
       settings.viewerPasswordHash = parsed.viewerPasswordHash;
     }
+    if (parsed.streamResolution !== undefined) {
+      settings.streamResolution = parsed.streamResolution;
+    }
     const cam = parsed.camera;
     if (cam) {
       const password = this.decrypt(cam.passwordProtected, cam.protector);
@@ -143,6 +169,7 @@ export class SettingsStore {
       ...(next.viewerPasswordHash !== undefined
         ? { viewerPasswordHash: next.viewerPasswordHash }
         : {}),
+      ...(next.streamResolution !== undefined ? { streamResolution: next.streamResolution } : {}),
       ...(next.camera === undefined
         ? this.undecryptableCamera()
         : {

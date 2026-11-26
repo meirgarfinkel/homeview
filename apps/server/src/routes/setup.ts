@@ -17,7 +17,7 @@ import { registerOnvifSetupRoutes } from './onvifSetup.js';
 import { loadOrCreateSecret } from '../security/dataDir.js';
 import { hashPassword } from '../security/passwordHash.js';
 import { passwordCheckFromHash, sessionCookie, SessionManager } from '../security/session.js';
-import type { SettingsStore } from '../settings/store.js';
+import { withCamera, type SettingsStore } from '../settings/store.js';
 
 /**
  * First-run setup in the browser. The onRequest hook in app.ts lets only
@@ -290,15 +290,14 @@ export async function saveKasaCamera(
   if ('fail' in found) return reply.code(found.fail.status).send(found.fail.body);
   if ('choose' in found) return { choose: found.choose };
   const saved = deps.settings.load();
-  deps.settings.save({
-    ...saved,
-    camera: {
+  deps.settings.save(
+    withCamera(saved, {
       username,
       password,
       alias: found.chosen.alias,
       localOnly: saved.camera?.localOnly ?? false,
-    },
-  });
+    }),
+  );
   reloadAfterReply(deps, reply);
   return { saved: toSetupCamera(found.chosen) };
 }
@@ -352,10 +351,9 @@ export async function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps)
       }
 
       const chosen = found.chosen;
-      settings.save({
-        ...settings.load(),
-        camera: { username, password, alias: chosen.alias, localOnly: false },
-      });
+      settings.save(
+        withCamera(settings.load(), { username, password, alias: chosen.alias, localOnly: false }),
+      );
       reloadAfter(reply);
       const result: SetupExistingResult = { saved: toSetupCamera(chosen) };
       return result;
@@ -455,7 +453,7 @@ function registerOnboardingRoutes(app: FastifyInstance, deps: SetupDeps): void {
       ...(over?.timeZone ? { timeZone: over.timeZone } : {}),
       ...(over?.extraLogins ? { extraLogins: over.extraLogins } : {}),
       logger: req.log as unknown as OnboardingOptions['logger'],
-      onSaved: (camera) => settings.save({ ...settings.load(), camera }),
+      onSaved: (camera) => settings.save(withCamera(settings.load(), camera)),
       onEvent: (event) => {
         if (event.type === 'status' && event.status.phase === 'done') {
           deps

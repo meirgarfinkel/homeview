@@ -1,5 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ApiError, OnvifProfilesResult, SettingsResponse } from '@kasa/shared';
+import {
+  STREAM_RESOLUTIONS,
+  type ApiError,
+  type OnvifProfilesResult,
+  type SettingsResponse,
+  type StreamResolution,
+} from '@kasa/shared';
 import type { Config } from '../config.js';
 import { isLocalRequest } from '../security/remoteRequest.js';
 import { verifyPassword } from '../security/passwordHash.js';
@@ -36,6 +42,22 @@ const cameraFromEnv: ApiError = {
   error: 'camera-from-env',
   message: 'The camera login comes from KASA_USERNAME and KASA_PASSWORD, so change it there.',
 };
+
+const resolutionFromEnv: ApiError = {
+  error: 'resolution-from-env',
+  message: 'The video quality comes from KASA_STREAM_RESOLUTION, so change it there.',
+};
+
+const resolutionSchema = {
+  body: {
+    type: 'object',
+    required: ['resolution'],
+    additionalProperties: false,
+    properties: {
+      resolution: { anyOf: [{ type: 'null' }, { type: 'string', enum: [...STREAM_RESOLUTIONS] }] },
+    },
+  },
+} as const;
 
 const wrongPassword: ApiError = {
   error: 'wrong-password',
@@ -126,9 +148,13 @@ export async function registerSettingsRoutes(
       desktop: deps.desktop,
       autostart: hooks?.getAutostart ? hooks.getAutostart() : null,
       version: hooks?.appVersion ? hooks.appVersion() : null,
+      streamResolution:
+        (config.camera.streamResolution as SettingsResponse['streamResolution'] | undefined) ??
+        null,
       managedByEnv: [
         ...(config.fromEnv.viewerPassword ? (['viewerPassword'] as const) : []),
         ...(config.fromEnv.camera ? (['camera'] as const) : []),
+        ...(config.fromEnv.streamResolution ? (['streamResolution'] as const) : []),
       ],
     };
   });
@@ -155,6 +181,21 @@ export async function registerSettingsRoutes(
     async (req, reply) => {
       if (config.fromEnv.camera) return reply.code(409).send(cameraFromEnv);
       return saveKasaCamera(deps, req, reply);
+    },
+  );
+
+  // The stream size. Anyone signed in may change it: it only affects sharpness and data use.
+  app.put<{ Body: { resolution: StreamResolution | null } }>(
+    '/api/settings/stream-resolution',
+    { schema: resolutionSchema },
+    async (req, reply) => {
+      if (config.fromEnv.streamResolution) return reply.code(409).send(resolutionFromEnv);
+      const next = settings.load();
+      if (req.body.resolution === null) delete next.streamResolution;
+      else next.streamResolution = req.body.resolution;
+      settings.save(next);
+      reloadAfterReply(deps, reply);
+      return reply.code(204).send();
     },
   );
 
