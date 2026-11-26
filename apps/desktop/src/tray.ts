@@ -9,6 +9,8 @@ export interface TrayActions {
   setAutostart(on: boolean): void;
   showLogs(): void;
   quit(): void;
+  /** Missing when this copy can't update itself (run from source). */
+  checkForUpdates?(): void;
 }
 
 /** The images tsup copies to dist/tray, next to the bundled main.mjs. */
@@ -46,6 +48,9 @@ export function createTray(actions: TrayActions): TrayHandle {
             refresh();
           },
         },
+        ...(actions.checkForUpdates
+          ? [{ label: 'Check for updates', click: () => actions.checkForUpdates!() }]
+          : []),
         { label: 'Show logs', click: () => actions.showLogs() },
         { type: 'separator' },
         { label: 'Quit', click: () => actions.quit() },

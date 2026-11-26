@@ -274,3 +274,6 @@ export type UpdateStatus =
   | { state: 'downloading'; version: string }
   | { state: 'ready'; version: string }
   | { state: 'error'; message: string };
+
+/** What an update check found. */
+export type UpdateCheckResult = 'up-to-date' | 'downloading' | 'ready' | 'not-installed';

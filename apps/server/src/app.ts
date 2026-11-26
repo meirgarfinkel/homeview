@@ -4,6 +4,7 @@ import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import type { UpdateCheckResult, UpdateStatus } from '@kasa/shared';
 import { viewerCheck, type Config } from './config.js';
 import type { CameraDriver } from './camera/driver.js';
 import type { LiveHub } from './media/liveHub.js';
@@ -57,6 +58,12 @@ export interface ServerHooks {
   quit?(): void;
   /** Opens a link in the system browser. */
   openExternal?(url: string): void;
+  /** Where the app's self-update stands. */
+  updateStatus?(): UpdateStatus;
+  /** Install the downloaded update and restart into it. */
+  installUpdate?(): void;
+  /** Look for a newer release now. */
+  checkForUpdates?(): Promise<UpdateCheckResult>;
 }
 
 export interface AppDeps {

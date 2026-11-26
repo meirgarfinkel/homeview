@@ -223,6 +223,22 @@ export async function registerSettingsRoutes(
     },
   );
 
+  app.get('/api/app/update', async (req, reply) => {
+    if (!appOnly(req, reply, hooks?.updateStatus)) return reply;
+    return hooks!.updateStatus!();
+  });
+
+  app.post('/api/app/update/install', async (req, reply) => {
+    if (!appOnly(req, reply, hooks?.installUpdate)) return reply;
+    reply.raw.once('close', () => hooks!.installUpdate!());
+    return reply.code(202).send();
+  });
+
+  app.post('/api/app/update/check', async (req, reply) => {
+    if (!appOnly(req, reply, hooks?.checkForUpdates)) return reply;
+    return { result: await hooks!.checkForUpdates!() };
+  });
+
   app.post('/api/app/quit', async (req, reply) => {
     if (!appOnly(req, reply, hooks?.quit)) return reply;
     reply.raw.once('close', () => hooks!.quit!());
