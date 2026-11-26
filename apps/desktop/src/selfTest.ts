@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -9,6 +9,7 @@ import { startServer, type RunningServer } from '../../server/src/server.js';
 import { SettingsStore } from '../../server/src/settings/store.js';
 import { openLogFile } from './logs.js';
 import { safeStorageProtector } from './protector.js';
+import { removeTempDir } from './tempDir.js';
 
 /**
  * Check that the built app can run the server: start it on a fresh data
@@ -59,6 +60,6 @@ export async function runSelfTest(staticDir: string, tunnel: string | undefined)
     return 1;
   } finally {
     await server?.stop().catch(() => undefined);
-    rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   }
 }
