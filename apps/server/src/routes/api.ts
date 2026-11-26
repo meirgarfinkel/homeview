@@ -14,6 +14,7 @@ import type { LiveHub } from '../media/liveHub.js';
 import { clientIp, isLocalRequest, isRemote, secureCookies } from '../security/remoteRequest.js';
 import { CameraAuthError, LinkieError } from '../kasa/linkieClient.js';
 import { CameraHttpError } from '../kasa/httpClient.js';
+import type { PtzControl } from '../camera/driver.js';
 import { PtzUnsupportedError } from '../kasa/ptz.js';
 import {
   clearedSessionCookie,
@@ -134,10 +135,16 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiDeps): Pr
   }
 }
 
+/** The camera's pan/tilt; a camera without one answers like an unsupported Kasa camera. */
+function ptzOf(camera: CameraService): PtzControl {
+  if (!camera.ptz) throw new PtzUnsupportedError();
+  return camera.ptz;
+}
+
 function registerCameraRoutes(app: FastifyInstance, camera: CameraService, hub: LiveHub): void {
   app.get('/api/status', async (): Promise<StatusResponse> => ({
     stream: hub.stats(),
-    ptz: camera.ptz.capability,
+    ptz: camera.ptz?.capability ?? 'unsupported',
   }));
 
   app.get('/api/camera', async (_req, reply) => {
@@ -166,7 +173,7 @@ function registerCameraRoutes(app: FastifyInstance, camera: CameraService, hub: 
     async (req, reply) => {
       try {
         const { direction, mode = 'step' } = req.body;
-        await (mode === 'hold' ? camera.ptz.hold(direction) : camera.ptz.step(direction));
+        await (mode === 'hold' ? ptzOf(camera).hold(direction) : ptzOf(camera).step(direction));
         return reply.code(204).send();
       } catch (err) {
         return sendError(reply, err);
@@ -176,7 +183,7 @@ function registerCameraRoutes(app: FastifyInstance, camera: CameraService, hub: 
 
   app.post('/api/ptz/stop', async (_req, reply) => {
     try {
-      await camera.ptz.stop();
+      await ptzOf(camera).stop();
       return reply.code(204).send();
     } catch (err) {
       return sendError(reply, err);
@@ -185,7 +192,7 @@ function registerCameraRoutes(app: FastifyInstance, camera: CameraService, hub: 
 
   app.get('/api/ptz/presets', async (_req, reply) => {
     try {
-      return await camera.ptz.presets();
+      return await ptzOf(camera).presets();
     } catch (err) {
       return sendError(reply, err);
     }
@@ -204,7 +211,7 @@ function registerCameraRoutes(app: FastifyInstance, camera: CameraService, hub: 
     },
     async (req, reply) => {
       try {
-        await camera.ptz.goToPreset(req.params.index);
+        await ptzOf(camera).goToPreset(req.params.index);
         return reply.code(204).send();
       } catch (err) {
         return sendError(reply, err);

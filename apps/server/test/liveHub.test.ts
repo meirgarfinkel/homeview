@@ -11,10 +11,17 @@ class FakeSource extends EventEmitter implements FrameSource {
   start = vi.fn();
   stop = vi.fn();
   video(data: Buffer, timestamp: number) {
-    this.emit('frame', { kind: 'video', data, timestamp } satisfies MediaFrame);
+    this.emit('frame', { kind: 'video', codec: 'h264', data, timestamp } satisfies MediaFrame);
   }
   audio(data: Buffer) {
-    this.emit('frame', { kind: 'audio', data, timestamp: 0 } satisfies MediaFrame);
+    this.emit('frame', {
+      kind: 'audio',
+      codec: 'pcmu',
+      sampleRate: 8000,
+      channels: 1,
+      data,
+      timestamp: 0,
+    } satisfies MediaFrame);
   }
 }
 

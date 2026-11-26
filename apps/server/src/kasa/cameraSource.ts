@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { StreamState } from '@kasa/shared';
+import type { MediaFrame } from '../camera/driver.js';
 import type { CameraCredentials } from './credentials.js';
 import { cameraRequest, type CameraResponse } from './httpClient.js';
 import { boundaryFromContentType, MultipartParser, type MultipartPart } from './multipart.js';
@@ -15,22 +16,7 @@ import type { Logger } from '../logger.js';
  * Audio parts: Content-Type audio/g711u, 8 kHz mono mu-law.
  */
 
-export interface VideoFrame {
-  kind: 'video';
-  /** H.264 Annex-B access unit. */
-  data: Buffer;
-  /** Seconds, camera clock when available. */
-  timestamp: number;
-}
-
-export interface AudioFrame {
-  kind: 'audio';
-  /** G.711 mu-law samples. */
-  data: Buffer;
-  timestamp: number;
-}
-
-export type MediaFrame = VideoFrame | AudioFrame;
+export type { AudioFrame, MediaFrame, VideoFrame } from '../camera/driver.js';
 
 export interface CameraSourceOptions {
   host: string;
@@ -256,10 +242,17 @@ export class CameraSource extends EventEmitter<CameraSourceEvents> {
     const type = (part.headers['content-type'] ?? '').toLowerCase().split(';', 1)[0]!.trim();
     const timestamp = parseTimestamp(part.headers);
     if (type === 'video/x-h264' || type === 'video/h264') {
-      return { kind: 'video', data: part.body, timestamp };
+      return { kind: 'video', codec: 'h264', data: part.body, timestamp };
     }
     if (type === 'audio/g711u' || type === 'audio/pcmu' || type === 'audio/x-mulaw') {
-      return { kind: 'audio', data: part.body, timestamp };
+      return {
+        kind: 'audio',
+        codec: 'pcmu',
+        sampleRate: AUDIO_SAMPLE_RATE,
+        channels: 1,
+        data: part.body,
+        timestamp,
+      };
     }
     if (!this.unknownTypes.has(type)) {
       this.unknownTypes.add(type);

@@ -1,5 +1,6 @@
 import { BinaryKind, type CodecMessage, type StreamState, type StreamStats } from '@kasa/shared';
-import { AUDIO_SAMPLE_RATE, type MediaFrame } from '../kasa/cameraSource.js';
+import type { FrameSource, MediaFrame } from '../camera/driver.js';
+import { AUDIO_SAMPLE_RATE } from '../kasa/cameraSource.js';
 import type { Logger } from '../logger.js';
 import { initSegment, mediaFragment, mimeType, VIDEO_TIMESCALE } from './fmp4.js';
 import { NalType, nalType, parseSps, splitAnnexB, toAvcc } from './h264.js';
@@ -16,15 +17,7 @@ import { NalType, nalType, parseSps, splitAnnexB, toAvcc } from './h264.js';
  *   connection can't keep up, so one slow client never stalls the others.
  */
 
-/** What the hub needs from the camera stream. Implemented by CameraSource. */
-export interface FrameSource {
-  readonly state: StreamState;
-  start(): void;
-  stop(): void;
-  on(event: 'frame', fn: (frame: MediaFrame) => void): unknown;
-  on(event: 'state', fn: (state: StreamState, detail: string | undefined) => void): unknown;
-  on(event: 'connected', fn: () => void): unknown;
-}
+export type { FrameSource } from '../camera/driver.js';
 
 export interface Viewer {
   sendJson(message: object): void;

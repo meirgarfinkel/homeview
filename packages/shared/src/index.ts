@@ -46,10 +46,14 @@ export interface CodecMessage {
 
 export type ServerMessage = StatusMessage | CodecMessage;
 
+/** Which kind of camera driver runs the camera. */
+export type CameraKind = 'kasa' | 'onvif';
+
 export interface CameraInfo {
+  kind: CameraKind;
   alias: string;
   model: string;
-  firmware: string;
+  firmware?: string;
   host: string;
   resolution?: string;
   /** Wi-Fi signal strength in dBm. */
