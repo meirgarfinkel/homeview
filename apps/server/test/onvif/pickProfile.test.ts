@@ -58,8 +58,8 @@ describe('pickProfile', () => {
 
 describe('rewriteStreamHost', () => {
   it('keeps port and path, replaces the host, drops credentials', () => {
-    expect(rewriteStreamHost('rtsp://u:p@192.168.1.250:8554/live?ch=1', '10.0.0.5')).toBe(
-      'rtsp://10.0.0.5:8554/live?ch=1',
+    expect(rewriteStreamHost('rtsp://u:p@192.168.1.250:8554/live?ch=1', '192.0.2.5')).toBe(
+      'rtsp://192.0.2.5:8554/live?ch=1',
     );
   });
 
@@ -70,6 +70,6 @@ describe('rewriteStreamHost', () => {
   });
 
   it('refuses a non-RTSP address', () => {
-    expect(() => rewriteStreamHost('http://192.168.1.250/x', '10.0.0.5')).toThrow();
+    expect(() => rewriteStreamHost('http://192.168.1.250/x', '192.0.2.5')).toThrow();
   });
 });
