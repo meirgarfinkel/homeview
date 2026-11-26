@@ -125,7 +125,14 @@ export interface ApiError {
 
 /** Reply to GET /api/settings. It never holds a password. */
 export interface SettingsResponse {
-  camera: { username: string; alias?: string; localOnly: boolean } | null;
+  camera: {
+    kind: CameraKind;
+    username: string;
+    alias?: string;
+    localOnly: boolean;
+    /** The stream profile a standard camera uses. */
+    profileToken?: string;
+  } | null;
   /** True when the request comes from this computer. */
   local: boolean;
   desktop: boolean;
@@ -209,3 +216,48 @@ export interface PairCodeResponse {
   url: string;
   expiresAt: string;
 }
+
+/** A standard (ONVIF) camera found on the network. */
+export interface OnvifScanCamera {
+  endpointId: string;
+  host: string;
+  port: number;
+  name?: string;
+}
+
+export interface OnvifScanResult {
+  cameras: OnvifScanCamera[];
+}
+
+/** How to reach a standard camera: its ONVIF address, or a typed-in stream address. */
+export type OnvifLogin =
+  | { host: string; port?: number; username: string; password: string }
+  | { rtspUrl: string; username: string; password: string };
+
+/** POST /api/setup/onvif/save: the login, the chosen profile, and the id from the scan. */
+export type OnvifSaveBody = OnvifLogin & { profileToken?: string; endpointId?: string };
+
+export interface OnvifProfileInfo {
+  token: string;
+  name: string;
+  codec: 'h264' | 'h265';
+  width: number;
+  height: number;
+}
+
+/** Reply to POST /api/setup/onvif/check. Nothing is saved. */
+export interface OnvifCheckResult {
+  model?: string;
+  profiles: OnvifProfileInfo[];
+  /** The profile Kasa Home would watch. */
+  picked: string;
+}
+
+/** Reply to POST /api/setup/onvif/save. */
+export interface OnvifSaveResult {
+  saved: { model?: string; host: string };
+}
+
+/** Error codes for the standard-camera checks. */
+export type OnvifCheckError =
+  'bad-address' | 'camera-login' | 'video-format' | 'no-answer' | 'onvif-off';

@@ -35,9 +35,18 @@ export async function createDriver(
       {
         allowPublicHost: camera.allowPublicHost,
         logger: logger.child({ component: 'camera' }),
-        ...(camera.discoveryTargets ? { discovery: { targets: camera.discoveryTargets } } : {}),
+        discovery: onvifDiscovery(config),
       },
     );
   }
   return new KasaDriver(config, logger, located);
+}
+
+/** Where ONVIF discovery probes go: the multicast group, or the test targets. */
+export function onvifDiscovery(config: Config): { targets?: string[]; port?: number } {
+  const { discoveryTargets, onvifDiscoveryPort } = config.camera;
+  return {
+    ...(discoveryTargets ? { targets: discoveryTargets } : {}),
+    ...(onvifDiscoveryPort ? { port: onvifDiscoveryPort } : {}),
+  };
 }

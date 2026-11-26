@@ -386,3 +386,41 @@ function check(res: RtspResponse): RtspResponse {
   }
   throw new Error(`The camera answered RTSP ${res.status} ${res.reason}`);
 }
+
+/**
+ * Ask a stream address what it sends, without playing it: the login and the
+ * video format. Used by setup when a camera's stream address is typed in.
+ * Resolves the video codec, or undefined when it's neither H.264 nor H.265.
+ * Throws StreamAuthError for a refused login; any other error means no answer.
+ */
+export async function probeRtsp(opts: {
+  url: string;
+  username: string;
+  password: string;
+  timeoutMs?: number;
+}): Promise<VideoCodec | undefined> {
+  const url = new URL(opts.url);
+  url.username = '';
+  url.password = '';
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const address = net.isIP(host) ? host : (await lookup(host)).address;
+  const session = await RtspSession.connect({
+    host: address,
+    port: Number(url.port || 554),
+    username: opts.username,
+    password: opts.password,
+    timeoutMs: opts.timeoutMs ?? 10_000,
+  });
+  try {
+    const describe = check(
+      await session.request('DESCRIBE', url.toString(), { Accept: 'application/sdp' }),
+    );
+    const base = header(describe, 'content-base') ?? url.toString();
+    const video = parseSdp(describe.body.toString('utf8'), base).find((m) => m.type === 'video');
+    if (video?.encoding === 'H264') return 'h264';
+    if (video?.encoding === 'H265') return 'h265';
+    return undefined;
+  } finally {
+    session.close();
+  }
+}

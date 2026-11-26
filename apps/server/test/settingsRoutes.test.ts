@@ -125,7 +125,7 @@ describe('GET /api/settings', () => {
     expect(text).not.toContain(PASS);
     expect(text).not.toContain('scrypt');
     expect(JSON.parse(text) as SettingsResponse).toEqual({
-      camera: { username: USER, alias: 'fake nursery', localOnly: false },
+      camera: { kind: 'kasa', username: USER, alias: 'fake nursery', localOnly: false },
       local: true,
       desktop: false,
       autostart: null,

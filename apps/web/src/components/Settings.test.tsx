@@ -15,7 +15,7 @@ vi.mock('./setup/Onboarding', () => ({
 const fetchMock = vi.fn<(path: string, init?: RequestInit) => Promise<Response>>();
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const base: SettingsResponse = {
-  camera: { username: 'a@b.c', alias: 'nursery', localOnly: false },
+  camera: { kind: 'kasa', username: 'a@b.c', alias: 'nursery', localOnly: false },
   local: true,
   desktop: true,
   autostart: false,
@@ -136,7 +136,7 @@ it('opens camera setup in account mode, and returns', async () => {
 
 it('opens camera setup in local mode for a local-only camera', async () => {
   const user = userEvent.setup();
-  await open({ camera: { username: 'a@b.c', localOnly: true } });
+  await open({ camera: { kind: 'kasa', username: 'a@b.c', localOnly: true } });
   await user.click(screen.getByRole('button', { name: 'Set up a camera' }));
   expect(screen.getByRole('button', { name: 'onboarding local' })).toBeTruthy();
 });

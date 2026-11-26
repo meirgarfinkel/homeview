@@ -80,6 +80,11 @@ const schema = z.object({
     (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
     z.coerce.number().int().min(1).max(65535).optional(),
   ),
+  // Test knob: ONVIF discovery port instead of 3702.
+  ONVIF_DISCOVERY_PORT: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.coerce.number().int().min(1).max(65535).optional(),
+  ),
 
   // Behaviour
   IDLE_DISCONNECT_SECONDS: z.coerce.number().int().min(0).max(3600).default(30),
@@ -128,6 +133,8 @@ export interface Config {
     discoveryTargets: string[] | undefined;
     /** Discovery port instead of 9999. For tests. */
     discoveryPort: number | undefined;
+    /** ONVIF discovery port instead of 3702. For tests. */
+    onvifDiscoveryPort: number | undefined;
     /** Which kind of camera; the environment's camera settings are Kasa only. */
     kind: CameraKind;
     /** A standard camera's address and login, when kind is 'onvif'. */
@@ -229,6 +236,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
       timeZone: e.KASA_SYNC_TIMEZONE ? (e.KASA_TIMEZONE ?? hostTimeZone()) : undefined,
       discoveryTargets: e.KASA_DISCOVERY_TARGETS.length > 0 ? e.KASA_DISCOVERY_TARGETS : undefined,
       discoveryPort: e.KASA_DISCOVERY_PORT,
+      onvifDiscoveryPort: e.ONVIF_DISCOVERY_PORT,
       kind,
       onvif,
     },
