@@ -73,7 +73,8 @@ jobs:
           # because runners block unprivileged user namespaces.
           xvfb-run -a apps/desktop/release/Kasa-Home-x86_64.AppImage \
             --appimage-extract-and-run --no-sandbox --self-test | tee self-test.log
-          grep -q '^SELF-TEST OK' self-test.log
+          # The extracted file list can land on the same line, so no ^ anchor.
+          grep -q 'SELF-TEST OK' self-test.log
 
       - name: Self-test the unpacked app (Windows)
         if: runner.os == 'Windows'
