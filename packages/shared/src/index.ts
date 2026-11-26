@@ -267,3 +267,10 @@ export interface OnvifSaveResult {
 /** Error codes for the standard-camera checks. */
 export type OnvifCheckError =
   'bad-address' | 'camera-login' | 'video-format' | 'no-answer' | 'onvif-off';
+
+/** Where the desktop app's self-update stands. */
+export type UpdateStatus =
+  | { state: 'none' }
+  | { state: 'downloading'; version: string }
+  | { state: 'ready'; version: string }
+  | { state: 'error'; message: string };
