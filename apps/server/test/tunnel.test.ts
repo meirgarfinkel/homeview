@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -16,6 +17,7 @@ import { TunnelManager, type TunnelOptions } from '../src/remote/tunnel.js';
 import { silentLogger, waitFor } from './helpers.js';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fakeTunnel.mjs', import.meta.url));
+const PARENT = fileURLToPath(new URL('./fixtures/tunnelParent.ts', import.meta.url));
 const READY = { event: { type: 'ready', url: 'https://kasa-home.example.ts.net' } };
 
 const dirs: string[] = [];
@@ -218,6 +220,32 @@ describe('TunnelManager', () => {
     tunnel.start();
     await waitFor(() => tunnel.phase() === 'on');
     expect(statSync(path.join(dir, 'tunnel')).mode & 0o777).toBe(0o700);
+  });
+
+  it('ends the helper when the app is killed without a chance to clean up', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'kasa-tunnel-'));
+    dirs.push(dir);
+    const record = path.join(dir, 'starts.jsonl');
+    const parent = spawn(process.execPath, ['--import', 'tsx', PARENT, path.join(dir, 'tunnel')], {
+      env: {
+        ...process.env,
+        FAKE_TUNNEL_SCRIPT: JSON.stringify([READY]),
+        FAKE_TUNNEL_RECORD: record,
+      },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    try {
+      let out = '';
+      parent.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
+      await waitFor(() => out.includes('on'), 10_000);
+      const { pid } = JSON.parse(readFileSync(record, 'utf8').trim()) as Started;
+      expect(alive(pid)).toBe(true);
+      // SIGKILL skips the exit handler, like a crash or a force quit.
+      parent.kill('SIGKILL');
+      await waitFor(() => !alive(pid), 5000);
+    } finally {
+      parent.kill('SIGKILL');
+    }
   });
 
   it('signOut() stops the helper and removes its state', async () => {

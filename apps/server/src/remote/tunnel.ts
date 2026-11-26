@@ -52,8 +52,9 @@ const STOPPED = 'The connection helper stopped.';
 /**
  * Runs the kasa-tunnel helper and follows its events. While it is wanted, a
  * helper that exits is started again after a wait, and after the last wait
- * the phase becomes 'problem'. The helper doesn't watch its parent, so it is
- * always ended here: by stop(), or by a SIGKILL when this process exits.
+ * the phase becomes 'problem'. It is ended here by stop(), or by a SIGKILL
+ * when this process exits. If this process dies without either, its end of the
+ * helper's stdin closes, and the helper exits on its own.
  */
 export class TunnelManager extends EventEmitter<{ change: [] }> {
   private currentSecret = '';
@@ -177,7 +178,8 @@ export class TunnelManager extends EventEmitter<{ change: [] }> {
         {
           // The secret goes in the environment, never on the command line.
           env: { ...process.env, [SECRET_ENV]: this.currentSecret },
-          stdio: ['ignore', 'pipe', 'pipe'],
+          // Nothing is written to stdin. The helper exits when it closes.
+          stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
         },
       );

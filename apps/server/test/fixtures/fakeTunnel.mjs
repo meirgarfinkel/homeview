@@ -6,6 +6,8 @@
 //   { "exit": 1 }         exit with this code
 //   { "ignoreTerm": true } ignore SIGTERM from now on
 // After the last step it stays running until it gets a signal, like the real helper.
+// Like the real helper, it also exits once its stdin ends, which is how it
+// notices that its parent is gone.
 //
 // FAKE_TUNNEL_RECORD, if set, is a file that gets one JSON line per start with
 // the pid, the arguments and the secret, so tests can check how it was started.
@@ -27,6 +29,9 @@ if (record) {
 
 const steps = JSON.parse(process.env.FAKE_TUNNEL_SCRIPT ?? '[]');
 const keepAlive = setInterval(() => {}, 1 << 30);
+
+process.stdin.on('end', () => process.exit(0));
+process.stdin.resume();
 
 for (const step of steps) {
   if ('event' in step) {

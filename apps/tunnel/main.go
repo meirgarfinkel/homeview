@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 )
 
@@ -24,6 +25,7 @@ var version = "dev"
 
 const (
 	pollEvery       = 2 * time.Second
+	watchEvery      = 10 * time.Second
 	loginURLWait    = 10 * time.Second
 	exitUsage       = 2
 	exitFatal       = 1
@@ -71,14 +73,23 @@ func run(stateDir, target, hostname, secret string) error {
 	srv := &tsnet.Server{Hostname: hostname, Dir: stateDir, Logf: logf, UserLogf: logf}
 	defer srv.Close()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancel := context.WithCancelCause(sigCtx)
+	defer cancel(nil)
+	// The parent keeps stdin open while it runs. Its end closing means it is
+	// gone, so stop rather than hold the Funnel for a dead server.
+	go cancelOnEOF(os.Stdin, func() { cancel(nil) })
 
 	if err := srv.Start(); err != nil {
 		return fmt.Errorf("start tailscale: %w", err)
 	}
 
-	dnsName, err := waitUntilReady(ctx, srv)
+	lc, err := srv.LocalClient()
+	if err != nil {
+		return fmt.Errorf("local client: %w", err)
+	}
+	dnsName, err := waitUntilReady(ctx, lc)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil
@@ -92,8 +103,24 @@ func run(stateDir, target, hostname, secret string) error {
 	}
 	emit(event{Type: "ready", URL: "https://" + dnsName})
 
+	go func() {
+		state := func(ctx context.Context) (string, error) {
+			st, err := lc.Status(ctx)
+			if err != nil {
+				return "", err
+			}
+			return st.BackendState, nil
+		}
+		if err := watchBackend(ctx, state, watchEvery); err != nil {
+			cancel(err)
+		}
+	}()
+
+	// No WriteTimeout: it would cut off the live view's WebSocket.
 	httpSrv := &http.Server{
-		Handler: newFunnelProxy(targetURL, secret),
+		Handler:           newFunnelProxy(targetURL, secret),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			if ip, ok := clientAddrFromConn(c); ok {
 				return withClientAddr(ctx, ip)
@@ -106,10 +133,12 @@ func run(stateDir, target, hostname, secret string) error {
 		httpSrv.Close()
 	}()
 	if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		if ctx.Err() != nil {
-			return nil
+		if ctx.Err() == nil {
+			return fmt.Errorf("serve: %w", err)
 		}
-		return fmt.Errorf("serve: %w", err)
+	}
+	if cause := context.Cause(ctx); errors.Is(cause, errTailscaleStopped) {
+		return cause
 	}
 	return nil
 }
@@ -117,11 +146,7 @@ func run(stateDir, target, hostname, secret string) error {
 // waitUntilReady polls the node until it is signed in and Funnel is enabled,
 // emitting login and enable URLs for the user as they appear. It returns the
 // node's DNS name without the trailing dot.
-func waitUntilReady(ctx context.Context, srv *tsnet.Server) (string, error) {
-	lc, err := srv.LocalClient()
-	if err != nil {
-		return "", fmt.Errorf("local client: %w", err)
-	}
+func waitUntilReady(ctx context.Context, lc *local.Client) (string, error) {
 	var (
 		started      = time.Now()
 		sawLoginURL  = ""
