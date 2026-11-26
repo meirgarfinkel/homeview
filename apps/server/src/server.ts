@@ -5,6 +5,7 @@ import { buildApp, clientAllowlist, type ServerHooks } from './app.js';
 import { loadConfig, resolveDataDir, type Config } from './config.js';
 import { createDriver, locate, type Located } from './camera/createDriver.js';
 import type { CameraDriver } from './camera/driver.js';
+import type { CameraPlace } from './camera/onvifDriver.js';
 import type { DiscoveredDevice } from './kasa/discovery.js';
 import { listenHttp, listenHttpsWithRedirect, type DualListener } from './listen.js';
 import { createLogger, type Logger } from './logger.js';
@@ -192,6 +193,29 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     return { host: current.camera.host, ...(current.device ? { device: current.device } : {}) };
   };
 
+  /** Remember where a standard camera moved to, so the next start looks there first. */
+  const saveCameraPlace = (place: CameraPlace): void => {
+    const saved = settings.load();
+    const cam = saved.camera;
+    if (cam?.kind !== 'onvif' || !cam.onvif) return;
+    settings.save({
+      ...saved,
+      camera: {
+        ...cam,
+        onvif: {
+          ...cam.onvif,
+          host: place.host,
+          onvifPort: place.onvifPort,
+          identity: {
+            ...cam.onvif.identity,
+            ...(place.endpointId ? { endpointId: place.endpointId } : {}),
+          },
+        },
+      },
+    });
+    logger.info({ camera: place.host }, "Saved the camera's new address");
+  };
+
   /** Everything up to listening, so a reload can fail without taking the old server down. */
   const prepare = async (config: Config, located?: Located) => {
     let camera: CameraDriver | undefined;
@@ -202,7 +226,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       try {
         const found = located ?? (await locate(config, logger));
         device = found.device;
-        camera = await createDriver(config, logger, found);
+        camera = await createDriver(config, logger, found, { onMoved: saveCameraPlace });
         hub = new LiveHub({
           source: camera.source,
           logger: logger.child({ component: 'hub' }),

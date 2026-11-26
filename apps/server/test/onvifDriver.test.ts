@@ -193,4 +193,54 @@ describe('OnvifDriver', () => {
     });
     await waitFor(() => driver!.host === '127.0.0.2', 8000);
   });
+
+  it('following signs in only to the device with the camera id', async () => {
+    const r1 = await rtsp('/main', 'h264');
+    const f1 = await onvif({ streamUri: r1.url });
+    const discoveryPort = await freeUdpPort();
+    driver = await OnvifDriver.create(configFor(f1), {
+      allowPublicHost: false,
+      logger: silentLogger,
+      discovery: { targets: ['127.0.0.3', '127.0.0.2'], port: discoveryPort, timeoutMs: 300 },
+      followIntervalMs: 100,
+    });
+    driver.start();
+    await f1.close();
+    // Another ONVIF device on the network with the same login, and the camera at its new address.
+    const decoy = await onvif({
+      host: '127.0.0.3',
+      discoveryPort,
+      endpointId: 'urn:uuid:dddddddd-0000-0000-0000-000000000000',
+      serial: 'OTHER',
+      mac: '02:00:00:00:00:99',
+    });
+    await onvif({ host: '127.0.0.2', discoveryPort, streamUri: r1.url });
+    await waitFor(() => driver!.host === '127.0.0.2', 8000);
+    expect(decoy.wsSecurityAttempts).toBe(0);
+  });
+
+  it('reports where it followed the camera to', async () => {
+    const r1 = await rtsp('/main', 'h264');
+    const f1 = await onvif({ streamUri: r1.url });
+    const discoveryPort = await freeUdpPort();
+    const moved: unknown[] = [];
+    driver = await OnvifDriver.create(configFor(f1), {
+      allowPublicHost: false,
+      logger: silentLogger,
+      discovery: { targets: ['127.0.0.2'], port: discoveryPort, timeoutMs: 300 },
+      followIntervalMs: 100,
+      onMoved: (place) => moved.push(place),
+    });
+    driver.start();
+    await f1.close();
+    const f2 = await onvif({ host: '127.0.0.2', discoveryPort, streamUri: r1.url });
+    await waitFor(() => moved.length > 0, 8000);
+    expect(moved).toEqual([
+      {
+        host: '127.0.0.2',
+        onvifPort: Number(new URL(f2.deviceUrl).port),
+        endpointId: BASE_FAKE.endpointId,
+      },
+    ]);
+  });
 });

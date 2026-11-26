@@ -37,6 +37,9 @@ interface SourceEvents {
   connected: [];
 }
 
+/** Query parameters that carry a login in some cameras' stream addresses. */
+const SECRET_PARAM = /pass|pwd|user|token|auth|key|secret/i;
+
 const BACKOFF_MS = [1000, 2000, 5000, 10000, 20000, 30000];
 const AUTH_RETRY_MS = 60_000;
 const BUSY_RETRY_MS = 15_000;
@@ -100,9 +103,16 @@ export class RtspSource extends EventEmitter<SourceEvents> implements FrameSourc
     return this._state;
   }
 
-  /** Where the stream is, without credentials, for logs. */
+  /**
+   * Where the stream is, without credentials, for logs. Some cameras put the
+   * login in the query (`?user=admin&pwd=...`), so those values are hidden too.
+   */
   get safeUrl(): string {
-    return this.url.toString();
+    const url = new URL(this.url.toString());
+    for (const key of [...url.searchParams.keys()]) {
+      if (SECRET_PARAM.test(key)) url.searchParams.set(key, '***');
+    }
+    return url.toString();
   }
 
   /** Switch to a new camera address, keeping the port and path. */

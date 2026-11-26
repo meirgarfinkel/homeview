@@ -7,6 +7,9 @@ export interface SoundDecoder {
   close(): void;
 }
 
+/** How soon a decoder that failed may be rebuilt. */
+const REBUILD_MS = 1000;
+
 function fromBase64(text: string): Uint8Array {
   return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 }
@@ -47,29 +50,44 @@ async function createAacDecoder(
     return undefined;
   }
 
-  const decoder = new AudioDecoder({
-    output: (data) => {
-      const frames = data.numberOfFrames;
-      const mono = new Float32Array(frames);
-      const plane = new Float32Array(frames);
-      for (let c = 0; c < data.numberOfChannels; c++) {
-        data.copyTo(plane, { planeIndex: c, format: 'f32-planar' });
-        for (let i = 0; i < frames; i++) mono[i]! += plane[i]! / data.numberOfChannels;
-      }
-      data.close();
-      onPcm(mono);
-    },
-    error: () => undefined, // A bad frame drops; the next one may decode.
-  });
-  decoder.configure(config);
+  const build = () => {
+    const d = new AudioDecoder({
+      output: (data) => {
+        const frames = data.numberOfFrames;
+        const mono = new Float32Array(frames);
+        const plane = new Float32Array(frames);
+        for (let c = 0; c < data.numberOfChannels; c++) {
+          data.copyTo(plane, { planeIndex: c, format: 'f32-planar' });
+          for (let i = 0; i < frames; i++) mono[i]! += plane[i]! / data.numberOfChannels;
+        }
+        data.close();
+        onPcm(mono);
+      },
+      // A frame the browser can't decode closes the decoder; decode() builds a new one.
+      error: () => undefined,
+    });
+    d.configure(config);
+    return d;
+  };
+  let decoder = build();
+  let rebuiltAt = -Infinity;
+  let closed = false;
   let timestampUs = 0;
   return {
     decode(frame) {
+      if (closed) return;
+      // Keep the sound meter and alert alive after a bad frame, without a rebuild loop.
+      if (decoder.state === 'closed') {
+        if (Date.now() - rebuiltAt < REBUILD_MS) return;
+        rebuiltAt = Date.now();
+        decoder = build();
+      }
       if (decoder.state !== undefined && decoder.state !== 'configured') return;
       decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: timestampUs, data: frame }));
       timestampUs += Math.round((1024 / format.sampleRate) * 1e6);
     },
     close() {
+      closed = true;
       if (decoder.state !== 'closed') decoder.close();
     },
   };

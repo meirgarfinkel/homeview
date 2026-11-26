@@ -1,3 +1,4 @@
+import dgram from 'node:dgram';
 import { mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -224,6 +225,62 @@ describe('a standard (ONVIF) camera', () => {
       expect(state).toBe('live');
       expect(rtsp.connections).toBeGreaterThan(0);
       ws.terminate();
+    } finally {
+      await s.stop();
+      await onvif.close();
+      await rtsp.close();
+    }
+  });
+});
+
+describe('a standard camera that moved while Kasa Home was off', () => {
+  it('is found by its id at start, and its new address is saved', async () => {
+    const udp = dgram.createSocket('udp4');
+    await new Promise<void>((r) => udp.bind(0, '127.0.0.1', () => r()));
+    const discoveryPort = udp.address().port;
+    await new Promise<void>((r) => udp.close(() => r()));
+    const rtsp = await startFakeRtsp({
+      video: 'h264',
+      username: BASE_FAKE.username,
+      password: BASE_FAKE.password,
+      auth: 'digest',
+      path: '/main',
+      host: '127.0.0.2',
+    });
+    const onvif = await startFakeOnvif({
+      ...BASE_FAKE,
+      host: '127.0.0.2',
+      discoveryPort,
+      streamUri: rtsp.url,
+    });
+    const onvifPort = Number(new URL(onvif.deviceUrl).port);
+    const settings = new SettingsStore(tmp());
+    settings.save({
+      viewerPasswordHash: await hashPassword('lullaby-time'),
+      camera: {
+        kind: 'onvif',
+        username: BASE_FAKE.username,
+        password: BASE_FAKE.password,
+        localOnly: false,
+        // Where it was before: nothing answers there now.
+        onvif: { host: '127.0.0.1', onvifPort, identity: { endpointId: BASE_FAKE.endpointId } },
+      },
+    });
+    const s = await start(
+      {
+        ...quiet,
+        KASA_DISCOVERY_TARGETS: '127.0.0.2',
+        ONVIF_DISCOVERY_PORT: String(discoveryPort),
+      },
+      settings,
+    );
+    try {
+      const login = await post(s, '/api/login', { password: 'lullaby-time' });
+      const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+      const camera = await fetch(`${s.localUrl}/api/camera`, { headers: { cookie } });
+      expect(camera.status).toBe(200);
+      expect(await camera.json()).toMatchObject({ kind: 'onvif', host: '127.0.0.2' });
+      expect(settings.load().camera?.onvif).toMatchObject({ host: '127.0.0.2', onvifPort });
     } finally {
       await s.stop();
       await onvif.close();

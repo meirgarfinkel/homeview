@@ -14,10 +14,19 @@ function installAudioDecoder(channels: number[][], supported = true) {
     constructor(
       private readonly init: { output: (d: unknown) => void; error: (e: Error) => void },
     ) {}
+    state = 'unconfigured';
     configure(config: unknown) {
       configs.push(config);
+      this.state = 'configured';
     }
-    decode(_chunk: FakeChunk) {
+    decode(chunk: FakeChunk) {
+      if (this.state !== 'configured') throw new Error('InvalidStateError');
+      // Like WebCodecs: a frame it can't decode closes the decoder.
+      if (chunk.data[0] === 0xff) {
+        this.state = 'closed';
+        this.init.error(new Error('EncodingError'));
+        return;
+      }
       this.init.output({
         numberOfChannels: channels.length,
         numberOfFrames: channels[0]!.length,
@@ -26,7 +35,9 @@ function installAudioDecoder(channels: number[][], supported = true) {
         close: () => undefined,
       });
     }
-    close() {}
+    close() {
+      this.state = 'closed';
+    }
   }
   class FakeEncodedAudioChunk {
     data: Uint8Array;
@@ -101,5 +112,36 @@ describe('createSoundDecoder', () => {
     expect([...(configs[0] as { description: Uint8Array }).description]).toEqual([0x14, 0x08]);
     d!.decode(new Uint8Array([1, 2, 3]));
     expect([...out[0]!]).toEqual([0.5, 0.5]);
+  });
+
+  it('keeps decoding after a frame the browser rejects', async () => {
+    const { configs } = installAudioDecoder([[0.25]]);
+    const out: Float32Array[] = [];
+    const d = await createSoundDecoder(
+      { codec: 'aac', sampleRate: 16000, channels: 1, config: 'FAg=' },
+      (p) => out.push(p),
+    );
+    d!.decode(new Uint8Array([0xff]));
+    d!.decode(new Uint8Array([1]));
+    expect(out).toHaveLength(1);
+    expect(configs).toHaveLength(2);
+  });
+
+  it('rebuilds a failing decoder at most once a second', async () => {
+    vi.useFakeTimers();
+    try {
+      const { configs } = installAudioDecoder([[0.25]]);
+      const d = await createSoundDecoder(
+        { codec: 'aac', sampleRate: 16000, channels: 1, config: 'FAg=' },
+        () => undefined,
+      );
+      for (let i = 0; i < 10; i++) d!.decode(new Uint8Array([0xff]));
+      expect(configs).toHaveLength(2);
+      vi.advanceTimersByTime(1000);
+      d!.decode(new Uint8Array([0xff]));
+      expect(configs).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

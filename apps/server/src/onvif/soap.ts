@@ -141,7 +141,9 @@ export class SoapClient {
     let answer = await this.post(serviceUrl, xml);
     if (answer.status === 401) {
       const raw = answer.headers['www-authenticate'];
-      const challenge = pickChallenge(Array.isArray(raw) ? raw : raw ? [raw] : []);
+      const challenge = pickChallenge(Array.isArray(raw) ? raw : raw ? [raw] : [], {
+        allowBasic: false,
+      });
       if (!challenge) throw new OnvifAuthError();
       const path = new URL(serviceUrl).pathname;
       const authorization = authorizationFor(

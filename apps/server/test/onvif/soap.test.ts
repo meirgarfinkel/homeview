@@ -86,6 +86,17 @@ describe('SoapClient', () => {
     expect(String((err as Error).message)).not.toContain(PASS);
   });
 
+  it('never sends the password to a Basic challenge', async () => {
+    const auths: string[] = [];
+    const url = await rawServer((req, res) => {
+      if (req.headers.authorization) auths.push(req.headers.authorization);
+      res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="cam"' });
+      res.end();
+    });
+    await expect(client(url).call(url, DEVICE_INFO)).rejects.toBeInstanceOf(OnvifAuthError);
+    expect(auths.filter((a) => /^basic/i.test(a))).toEqual([]);
+  });
+
   it('rejects a DOCTYPE answer', async () => {
     const url = await rawServer((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/soap+xml' });

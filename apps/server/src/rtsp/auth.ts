@@ -3,9 +3,17 @@ import { createHash, randomBytes } from 'node:crypto';
 
 const md5 = (s: string) => createHash('md5').update(s).digest('hex');
 
-/** The challenge to answer: Digest if offered, else Basic, else undefined. */
-export function pickChallenge(headers: readonly string[]): string | undefined {
-  return headers.find((h) => /^digest\s/i.test(h)) ?? headers.find((h) => /^basic(\s|$)/i.test(h));
+/**
+ * The challenge to answer: Digest if offered, else Basic (unless refused),
+ * else undefined. Basic sends the password itself, so SOAP refuses it.
+ */
+export function pickChallenge(
+  headers: readonly string[],
+  opts: { allowBasic?: boolean } = {},
+): string | undefined {
+  const digest = headers.find((h) => /^digest\s/i.test(h));
+  if (digest || opts.allowBasic === false) return digest;
+  return headers.find((h) => /^basic(\s|$)/i.test(h));
 }
 
 export function parseChallengeParams(challenge: string): Record<string, string> {

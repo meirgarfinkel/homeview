@@ -1,3 +1,4 @@
+import net, { type AddressInfo } from 'node:net';
 import { Writable } from 'node:stream';
 import pino from 'pino';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -101,6 +102,33 @@ describe('RtspSource', () => {
     await new Promise((res) => setTimeout(res, 50));
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.join('\n')).not.toContain(PASS);
+  });
+
+  it('a password in the stream address query never reaches the logs', async () => {
+    const lines: string[] = [];
+    const sink = new Writable({
+      write(chunk, _enc, done) {
+        lines.push(String(chunk));
+        done();
+      },
+    });
+    const closed = net.createServer();
+    await new Promise<void>((r) => closed.listen(0, '127.0.0.1', () => r()));
+    const port = (closed.address() as AddressInfo).port;
+    await new Promise<void>((r) => closed.close(() => r()));
+    source = new RtspSource({
+      url: `rtsp://127.0.0.1:${port}/live?user=admin&pwd=q-s3cret-9&channel=1`,
+      username: 'admin',
+      password: 'x',
+      allowPublicHost: false,
+      logger: pino({ level: 'trace' }, sink),
+    });
+    expect(source.safeUrl).not.toContain('q-s3cret-9');
+    expect(source.safeUrl).toContain('channel=1');
+    source.start();
+    await waitFor(() => lines.some((l) => l.includes('channel=1')), 5000);
+    source.stop();
+    expect(lines.join('\n')).not.toContain('q-s3cret-9');
   });
 
   it('reconnects after the camera drops the connection', async () => {

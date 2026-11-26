@@ -30,6 +30,8 @@ export interface OnvifDriverOptions {
   discovery?: { targets?: string[]; port?: number; timeoutMs?: number };
   /** How often to check the camera is still where we think. */
   followIntervalMs?: number;
+  /** Called after following the camera to a new address. */
+  onMoved?: (place: CameraPlace) => void;
 }
 
 const FOLLOW_INTERVAL_MS = 30_000;
@@ -183,39 +185,94 @@ export class OnvifDriver implements CameraDriver {
   }
 
   private async follow(): Promise<void> {
-    const { identity } = this.cfg;
-    const { logger } = this.opts;
-    for (const candidate of await this.search()) {
-      if (this.disposed) return;
-      const port = Number(new URL(candidate.xaddr).port) || 80;
-      let device: OnvifDevice;
-      try {
-        device = await OnvifDevice.connect({
-          deviceUrl: deviceUrlFor(candidate.host, port),
-          username: this.cfg.username,
-          password: this.cfg.password,
-          allowPublicHost: this.opts.allowPublicHost,
-          logger,
-        });
-      } catch {
-        continue;
-      }
-      const matches = async (): Promise<boolean> => {
-        if (identity.endpointId && candidate.endpointId === identity.endpointId) return true;
-        if (identity.serial && (await device.info()).serial === identity.serial) return true;
-        if (identity.mac && (await device.macAddress()) === identity.mac.toLowerCase()) return true;
-        return false;
-      };
-      if (!(await matches().catch(() => false))) continue;
-      logger.info({ from: this._host, to: candidate.host }, 'The camera moved; following it');
-      this.device = device;
-      this._host = candidate.host;
-      this.port = port;
-      this.failures = 0;
-      if (candidate.name) this.name = candidate.name;
-      this.source.setHost(candidate.host);
+    const found = await findCamera(this.cfg, this.opts);
+    if (!found || this.disposed) {
+      if (!found)
+        this.opts.logger.warn('The camera is not answering and was not found on the network');
       return;
     }
-    logger.warn('The camera is not answering and was not found on the network');
+    this.opts.logger.info({ from: this._host, to: found.host }, 'The camera moved; following it');
+    this.device = found.device;
+    this._host = found.host;
+    this.port = found.onvifPort;
+    this.failures = 0;
+    if (found.name) this.name = found.name;
+    this.source.setHost(found.host);
+    this.opts.onMoved?.(placeOf(found));
   }
+}
+
+/** Where the camera was found, to save so the next start looks there. */
+export interface CameraPlace {
+  host: string;
+  onvifPort: number;
+  endpointId?: string;
+}
+
+interface Found extends CameraPlace {
+  device: OnvifDevice;
+  name?: string;
+}
+
+function placeOf(f: Found): CameraPlace {
+  return {
+    host: f.host,
+    onvifPort: f.onvifPort,
+    ...(f.endpointId ? { endpointId: f.endpointId } : {}),
+  };
+}
+
+/**
+ * Search the network for this camera. When its endpoint id is known, only a
+ * device announcing that id gets the login. Without the id (a camera added
+ * by typed address) each device is signed in to and asked for its serial or
+ * MAC, never with a Basic challenge (see SoapClient).
+ */
+export async function findCamera(
+  cfg: OnvifCameraConfig,
+  opts: OnvifDriverOptions,
+): Promise<Found | undefined> {
+  const { identity } = cfg;
+  const d = opts.discovery;
+  let candidates = await discoverOnvif({
+    logger: opts.logger,
+    ...(d?.targets ? { targets: d.targets } : {}),
+    ...(d?.port ? { port: d.port } : {}),
+    ...(d?.timeoutMs ? { timeoutMs: d.timeoutMs } : {}),
+  }).catch((): DiscoveredOnvif[] => []);
+  if (identity.endpointId) {
+    candidates = candidates.filter((c) => c.endpointId === identity.endpointId);
+  } else if (!identity.serial && !identity.mac) {
+    return undefined;
+  }
+  for (const candidate of candidates) {
+    const onvifPort = Number(new URL(candidate.xaddr).port) || 80;
+    let device: OnvifDevice;
+    try {
+      device = await OnvifDevice.connect({
+        deviceUrl: deviceUrlFor(candidate.host, onvifPort),
+        username: cfg.username,
+        password: cfg.password,
+        allowPublicHost: opts.allowPublicHost,
+        logger: opts.logger,
+      });
+    } catch {
+      continue;
+    }
+    const matches = async (): Promise<boolean> => {
+      if (identity.endpointId) return true;
+      if (identity.serial && (await device.info()).serial === identity.serial) return true;
+      if (identity.mac && (await device.macAddress()) === identity.mac.toLowerCase()) return true;
+      return false;
+    };
+    if (!(await matches().catch(() => false))) continue;
+    return {
+      device,
+      host: candidate.host,
+      onvifPort,
+      endpointId: candidate.endpointId,
+      ...(candidate.name ? { name: candidate.name } : {}),
+    };
+  }
+  return undefined;
 }
