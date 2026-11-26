@@ -66,7 +66,10 @@ Kasa Home opens your browser on a welcome page, on this computer only.
 
 1. "Welcome to Kasa Home". Choose a password of at least 8 characters and
    click "Next". Everyone who watches will type it, on any phone or computer.
-2. "Your camera". Choose the line that fits.
+2. "Which camera do you have?". Click "Kasa", or "Another brand" for a
+   Reolink, Tapo, Amcrest or other standard camera (see
+   [Cameras from other brands](#cameras-from-other-brands)).
+3. For a Kasa camera, "Your camera". Choose the line that fits.
    - "It already works in the Kasa app". Type your Kasa email and password,
      click "Connect", and pick the camera if more than one shows.
    - "It's new or reset, and I have a TP-Link account". The camera links to
@@ -81,7 +84,7 @@ Kasa Home opens your browser on a welcome page, on this computer only.
      knows it could watch the camera directly. Choose this only if you trust
      everyone on your Wi-Fi. The Kasa phone app can't be used with it. To use
      the app later, reset the camera and set it up again with an account.
-3. For a new or reset camera, the page then walks you through the camera
+4. For a new or reset camera, the page then walks you through the camera
    setup. The camera records nothing until it finishes.
    - "Reset the camera". Hold the camera's reset button until it resets
      (its manual says how long). After about a minute it starts its own
@@ -98,7 +101,7 @@ Kasa Home opens your browser on a welcome page, on this computer only.
      computer back. The page waits up to 5 minutes for the camera to join
      your Wi-Fi, and moves on by itself once it has. On Linux this happens
      by itself, with a wait of up to 2 minutes.
-4. "All set" shows the live picture and a QR code.
+5. "All set" shows the live picture and a QR code.
 
 On Windows, a prompt may ask whether to allow Kasa Home on networks. Allow
 it on private networks, or phones can't connect.
@@ -353,9 +356,47 @@ the same local protocol (Kasa `IOT.IPCAMERA` models such as the KC100,
 KC105, KC110, KC115, KC120, KC125, KC200, KC400, KC401, KC411S, KC420WS,
 EC60, EC70, EC71 and KD110) will probably show video and sound. Pan and tilt
 appear only on cameras that can move. Battery cameras that connect through a
-Kasa hub (the KC300/KC310 family) and Tapo-brand cameras use a different
-system and don't work. `pnpm probe` tells you within seconds whether a
-camera works.
+Kasa hub (the KC300/KC310 family) use a different system and don't work.
+`pnpm probe` tells you within seconds whether a Kasa camera works.
+
+### Cameras from other brands
+
+Kasa Home also works with cameras that speak the two common standards,
+ONVIF (for finding the camera and for pan and tilt) and RTSP (for the
+video). Most cameras sold for home use do, including Reolink, Tapo, Amcrest,
+Hikvision, Dahua and Annke. This support is new and has so far been tested
+against a simulated camera only; if your camera doesn't work, please open an
+issue with its make and model.
+
+In setup, choose "Another brand". Kasa Home searches your Wi-Fi and lists
+the cameras it finds. Not in the list? Type its address: either the
+camera's IP address (with `:port` if its ONVIF port isn't 80), or its full
+`rtsp://` stream address. A typed stream address gives video and sound but
+no pan and tilt.
+
+Make sure the camera is set up in its own app and on your Wi-Fi first. Then:
+
+- Tapo: in the Tapo app, create a "Camera account" (Advanced settings). Use
+  that, not your Tapo login.
+- Reolink: turn on ONVIF and RTSP in the camera's network settings if they
+  are off.
+- Others: use the camera's admin username and password.
+
+Kasa Home picks a stream of at most 1080p to keep phones smooth. You can pick
+another one under Settings, "Camera in use", and change to a different
+camera there too ("Change camera"). The old camera stays in use until the
+new one connects.
+
+Cameras that only work through their maker's cloud, such as Ring, Nest,
+Arlo and most Wyze cameras, have no local stream and don't work.
+
+Many of these cameras send H.265 video. Kasa Home passes it to the browser
+as it is, without converting it. Safari and recent Chrome and Edge on most
+computers and phones play it; Firefox and some older devices don't, and show
+"This browser can't play this camera's video (H.265). Try another browser,
+or set the camera to H.264 in its own app." Sound in AAC, G.711 A-law or
+G.711 μ-law plays; other sound formats show "This camera's sound format
+isn't supported yet." and the video still plays.
 
 ## Settings
 
@@ -450,6 +491,7 @@ docs/           Camera protocol notes
 ```bash
 pnpm dev              # API server (tsx watch) + Vite on http://127.0.0.1:5173
 pnpm dev:fake-camera  # optional: a simulated camera on 127.0.0.1
+pnpm dev:fake-onvif   # optional: a simulated standard (ONVIF) camera, H.265 + AAC
 pnpm test             # unit + integration tests (uses a fake camera; ffmpeg optional)
 pnpm lint
 pnpm typecheck

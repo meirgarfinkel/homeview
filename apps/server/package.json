@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
     "fake-camera": "tsx src/scripts/fakeCamera.ts",
+    "fake-onvif": "tsx src/scripts/fakeOnvifCamera.ts",
     "discover": "tsx src/scripts/discover.ts",
     "probe": "tsx src/scripts/probe.ts",
     "setup-camera": "tsx src/scripts/setupCamera.ts"
