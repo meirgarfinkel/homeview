@@ -156,10 +156,16 @@ The tray icon (the menu bar on a Mac) has four items:
 - "Show logs" opens the log file, which helps when asking for help.
 - "Quit" stops HomeView. Nobody can watch until you open it again.
 
-Open the Settings page with the gear button on the monitor. On the computer
-itself it lets you change the viewer password, the camera login, set up a
-new or reset camera ("Set up a camera"), turn on starting with the computer
-and stop HomeView ("Stop HomeView").
+Open the Settings page with the gear button on the monitor. Its sections are
+Camera, Video, Access and App. On the computer itself it lets you change the
+viewer password, the camera login, set up a new or reset camera ("Set up a
+camera"), turn on starting with the computer and stop HomeView ("Stop
+HomeView").
+
+Under Video, "Video quality" picks the picture size: the camera's default,
+720p, 1080p, or 2K when the camera can do it. Higher looks sharper and uses
+more data, which matters most for a phone on mobile data. The picture
+changes a few seconds after you pick.
 
 Some Linux desktops show no tray icon. Stock GNOME, for example on Fedora,
 needs an AppIndicator extension. Without one, open HomeView again from your
@@ -403,7 +409,8 @@ Make sure the camera is set up in its own app and on your Wi-Fi first. Then:
 - Others: use the camera's admin username and password.
 
 HomeView picks a stream of at most 1080p to keep phones smooth. You can pick
-another one under Settings, "Camera in use", and change to a different
+another one under Settings, Video, "Stream". Under Camera, "Camera in use",
+you can change to a different
 camera there too ("Change camera"). The old camera stays in use until the
 new one connects.
 
@@ -425,20 +432,20 @@ changes them from the Settings page. `pnpm start` reads `.env`, which wins
 over `settings.json`. See [.env.example](.env.example) for the full list with
 explanations. The ones you might change:
 
-| Setting                  | Default            | What it does                                                        |
-| ------------------------ | ------------------ | ------------------------------------------------------------------- |
-| `KASA_USERNAME`          | (required)         | Kasa account email, or the camera's login for local-only setup      |
-| `KASA_PASSWORD`          | (required)         | The matching password                                               |
-| `VIEWER_PASSWORD`        | (required)         | Password for the web page, 8+ characters                            |
-| `KASA_HOST`              | found by itself    | Pin the camera's IP address (normally found and followed by itself) |
-| `KASA_ALIAS`             |                    | Which camera to use when there are several, by name                 |
-| `KASA_STREAM_RESOLUTION` | camera default     | `2560x1440`, `2304x1296`, `1080P`, `720P` or `360P`                 |
-| `PORT`                   | `8090`             | Web page port                                                       |
-| `HTTPS`                  | `true`             | Serve the page over HTTPS with its own or a supplied certificate    |
-| `TLS_CERT_FILE`          |                    | Use your own certificate (e.g. from mkcert), with `TLS_KEY_FILE`    |
-| `ALLOWED_CIDRS`          | this machine's LAN | Networks allowed to open the page                                   |
-| `PTZ_STEP_SPEED`         | `2`                | How far one tap moves the camera, 1 to 10                           |
-| `KASA_TIMEZONE`          | this computer's    | Time zone for the camera's clock and the time shown on the video    |
+| Setting                  | Default            | What it does                                                                             |
+| ------------------------ | ------------------ | ---------------------------------------------------------------------------------------- |
+| `KASA_USERNAME`          | (required)         | Kasa account email, or the camera's login for local-only setup                           |
+| `KASA_PASSWORD`          | (required)         | The matching password                                                                    |
+| `VIEWER_PASSWORD`        | (required)         | Password for the web page, 8+ characters                                                 |
+| `KASA_HOST`              | found by itself    | Pin the camera's IP address (normally found and followed by itself)                      |
+| `KASA_ALIAS`             |                    | Which camera to use when there are several, by name                                      |
+| `KASA_STREAM_RESOLUTION` | camera default     | `2560x1440`, `2304x1296`, `1080P`, `720P` or `360P`. Overrides Video quality in Settings |
+| `PORT`                   | `8090`             | Web page port                                                                            |
+| `HTTPS`                  | `true`             | Serve the page over HTTPS with its own or a supplied certificate                         |
+| `TLS_CERT_FILE`          |                    | Use your own certificate (e.g. from mkcert), with `TLS_KEY_FILE`                         |
+| `ALLOWED_CIDRS`          | this machine's LAN | Networks allowed to open the page                                                        |
+| `PTZ_STEP_SPEED`         | `2`                | How far one tap moves the camera, 1 to 10                                                |
+| `KASA_TIMEZONE`          | this computer's    | Time zone for the camera's clock and the time shown on the video                         |
 
 HomeView finds the camera on its own and follows it if its IP address
 changes. Before switching to a new address, it checks the camera's security
