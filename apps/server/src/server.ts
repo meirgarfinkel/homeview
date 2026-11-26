@@ -3,10 +3,10 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, clientAllowlist, type ServerHooks } from './app.js';
 import { loadConfig, resolveDataDir, type Config } from './config.js';
-import { Camera, locateCamera } from './kasa/camera.js';
-import { CameraWatcher } from './kasa/cameraWatcher.js';
+import { createDriver, locate, type Located } from './camera/createDriver.js';
+import type { CameraDriver } from './camera/driver.js';
+import type { CameraPlace } from './camera/onvifDriver.js';
 import type { DiscoveredDevice } from './kasa/discovery.js';
-import { syncTimeZone } from './kasa/timeZone.js';
 import { listenHttp, listenHttpsWithRedirect, type DualListener } from './listen.js';
 import { createLogger, type Logger } from './logger.js';
 import { LiveHub } from './media/liveHub.js';
@@ -78,17 +78,13 @@ export function lanAddress(
   return undefined;
 }
 
-type Located = { host: string; device?: DiscoveredDevice };
-
 /** One build of the app: its camera and timers. A reload replaces it. */
 interface Instance {
   config: Config;
-  camera: Camera | undefined;
+  camera: CameraDriver | undefined;
   /** What discovery said about the camera, kept so a reload can reuse it. */
   device: DiscoveredDevice | undefined;
   hub: LiveHub | undefined;
-  watcher: CameraWatcher | undefined;
-  timers: NodeJS.Timeout[];
   secure: boolean;
   port: number;
 }
@@ -151,7 +147,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         if (stopped || current?.camera) return;
         let located: Located;
         try {
-          located = await locateCamera(config.camera, logger);
+          located = await locate(config, logger);
         } catch (err) {
           logger.warn({ err: (err as Error).message }, 'Camera still not found; trying again soon');
           scheduleCameraRetry(config);
@@ -197,17 +193,40 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     return { host: current.camera.host, ...(current.device ? { device: current.device } : {}) };
   };
 
+  /** Remember where a standard camera moved to, so the next start looks there first. */
+  const saveCameraPlace = (place: CameraPlace): void => {
+    const saved = settings.load();
+    const cam = saved.camera;
+    if (cam?.kind !== 'onvif' || !cam.onvif) return;
+    settings.save({
+      ...saved,
+      camera: {
+        ...cam,
+        onvif: {
+          ...cam.onvif,
+          host: place.host,
+          onvifPort: place.onvifPort,
+          identity: {
+            ...cam.onvif.identity,
+            ...(place.endpointId ? { endpointId: place.endpointId } : {}),
+          },
+        },
+      },
+    });
+    logger.info({ camera: place.host }, "Saved the camera's new address");
+  };
+
   /** Everything up to listening, so a reload can fail without taking the old server down. */
   const prepare = async (config: Config, located?: Located) => {
-    let camera: Camera | undefined;
+    let camera: CameraDriver | undefined;
     let hub: LiveHub | undefined;
     let cameraError: string | undefined;
     let device: DiscoveredDevice | undefined;
     if (config.setupComplete) {
       try {
-        const found = located ?? (await locateCamera(config.camera, logger));
+        const found = located ?? (await locate(config, logger));
         device = found.device;
-        camera = new Camera(found.host, config, logger, device);
+        camera = await createDriver(config, logger, found, { onMoved: saveCameraPlace });
         hub = new LiveHub({
           source: camera.source,
           logger: logger.child({ component: 'hub' }),
@@ -257,7 +276,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await app.ready();
     } catch (err) {
       hub?.close();
-      await camera?.ptz.dispose();
+      await camera?.dispose();
       await app.close().catch(() => undefined);
       throw err;
     }
@@ -267,8 +286,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       camera,
       device,
       hub,
-      watcher: undefined,
-      timers: [],
       secure: tls !== undefined,
       port,
     });
@@ -278,7 +295,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         'Kasa Home is running',
       );
     };
-    let next: Instance | undefined;
     return {
       /** The first start: bind the first free port. */
       listen: async (ports: number[]): Promise<{ listener: DualListener; port: number }> => {
@@ -293,9 +309,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           }
           remote.attach(remoteListener.address().port);
         }
-        current = next = instance(port);
+        current = instance(port);
         running(port);
-        if (camera) startCameraTasks(next, camera, device);
+        camera?.start();
         return { listener: bound, port };
       },
       /** A reload: take over the listener's requests from the current app. */
@@ -307,7 +323,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
             // The computer may have joined another network since the last build.
             ...(tls ? { allowClient: createIpAllowlist(allowed) } : {}),
             onSwitched: () => {
-              current = next = instance(boundPort);
+              current = instance(boundPort);
             },
           }),
           remoteListener?.swap(app),
@@ -316,46 +332,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       /** After the old instance is gone: log and start the camera tasks. */
       started: () => {
         running(boundPort);
-        if (camera && next) startCameraTasks(next, camera, device);
+        camera?.start();
       },
     };
-  };
-
-  const startCameraTasks = (instance: Instance, camera: Camera, device?: DiscoveredDevice) => {
-    const { config } = instance;
-    // Check credentials early so a typo shows up in the log right away.
-    camera.info(0).then(
-      (info) => logger.info({ alias: info.alias, model: info.model }, 'Camera credentials OK'),
-      (err: Error) => logger.error({ err: err.message }, 'Could not query the camera'),
-    );
-
-    // Follow the camera if its address changes, unless KASA_HOST pins it.
-    if (!config.camera.host && device) {
-      instance.watcher = new CameraWatcher({
-        camera,
-        device,
-        apiPort: config.camera.apiPort,
-        pinnedSha256: config.camera.certSha256,
-        allowPublicHost: config.camera.allowPublicHost,
-        ...(config.camera.discoveryPort ? { discoveryPort: config.camera.discoveryPort } : {}),
-        ...(config.camera.discoveryTargets
-          ? { discoveryTargets: config.camera.discoveryTargets }
-          : {}),
-        logger: logger.child({ component: 'locate' }),
-      });
-      instance.watcher.start();
-    }
-
-    // Keep the camera's clock (and its on-screen timestamp) in this time zone.
-    const zone = config.camera.timeZone;
-    if (zone) {
-      const sync = () =>
-        syncTimeZone(camera.linkie, zone, logger).catch((err: Error) =>
-          logger.warn({ err: err.message }, "Could not check the camera's time zone"),
-        );
-      void sync();
-      instance.timers.push(setInterval(() => void sync(), 60 * 60 * 1000).unref());
-    }
   };
 
   // For route handlers: resolves when the new app is ready, before the swap,
@@ -423,9 +402,7 @@ function localUrlFor(port: number): string {
 
 /** Stop an instance's camera work. Its app is closed by the listener. */
 async function disposeInstance(instance: Instance): Promise<void> {
-  for (const timer of instance.timers) clearInterval(timer);
-  instance.watcher?.stop();
-  await instance.camera?.ptz.dispose();
+  await instance.camera?.dispose();
   instance.hub?.close();
 }
 

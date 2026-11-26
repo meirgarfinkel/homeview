@@ -347,6 +347,12 @@ describe('the remote gate', () => {
       ['POST', '/api/app/quit'],
       ['GET', '/api/remote/devices'],
       ['POST', '/api/remote/pair-code'],
+      ['POST', '/api/setup/onvif/scan'],
+      ['POST', '/api/setup/onvif/check'],
+      ['POST', '/api/setup/onvif/save'],
+      ['POST', '/api/setup/kasa-camera'],
+      ['POST', '/api/settings/camera-profile'],
+      ['GET', '/api/settings/camera-profiles'],
     ];
     for (const [method, url] of tries) {
       const body = method === 'GET' ? undefined : {};

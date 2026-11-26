@@ -6,6 +6,12 @@ import type {
   PtzPreset,
   OnboardingAnswer,
   OnboardingStatus,
+  OnvifCheckResult,
+  OnvifLogin,
+  OnvifProfilesResult,
+  OnvifSaveBody,
+  OnvifSaveResult,
+  OnvifScanResult,
   PairCodeResponse,
   RemoteStatus,
   SessionResponse,
@@ -98,6 +104,9 @@ export const api = {
       password,
       ...(alias === undefined ? {} : { alias }),
     }),
+  cameraProfiles: () => request<OnvifProfilesResult>('/api/settings/camera-profiles'),
+  setCameraProfile: (profileToken: string) =>
+    post('/api/settings/camera-profile', { profileToken }),
   setAutostart: (enabled: boolean) => put('/api/app/autostart', { enabled }),
   quit: () => post('/api/app/quit'),
   remote: {
@@ -117,6 +126,18 @@ export const api = {
         password,
         ...(alias === undefined ? {} : { alias }),
       }),
+    /** Change to a Kasa camera after setup, from this computer. */
+    kasaCamera: (username: string, password: string, alias?: string) =>
+      post<SetupExistingResult>('/api/setup/kasa-camera', {
+        username,
+        password,
+        ...(alias === undefined ? {} : { alias }),
+      }),
+    onvif: {
+      scan: () => post<OnvifScanResult>('/api/setup/onvif/scan'),
+      check: (login: OnvifLogin) => post<OnvifCheckResult>('/api/setup/onvif/check', login),
+      save: (body: OnvifSaveBody) => post<OnvifSaveResult>('/api/setup/onvif/save', body),
+    },
     resetPassword: (password: string) => post('/api/setup/reset-password', { password }),
     startOnboarding: (
       mode: 'account' | 'local',

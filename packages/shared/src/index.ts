@@ -16,7 +16,7 @@ export const BinaryKind = {
   VideoInit: 1,
   /** One fMP4 media fragment (moof + mdat) holding a single video frame. */
   VideoFragment: 2,
-  /** Raw G.711 mu-law audio, mono. Sample rate comes from CodecMessage. */
+  /** One encoded sound frame in the format CodecMessage.audio names (AAC without ADTS). */
   Audio: 3,
 } as const;
 export type BinaryKind = (typeof BinaryKind)[keyof typeof BinaryKind];
@@ -38,18 +38,31 @@ export interface CodecMessage {
     width: number;
     height: number;
   };
-  audio: {
-    codec: 'pcmu';
-    sampleRate: number;
-  };
+  /**
+   * The sound format. Absent until the camera's sound starts; null when the
+   * page can't play it (a format we don't support).
+   */
+  audio?: AudioFormat | null;
+}
+
+export interface AudioFormat {
+  codec: 'pcmu' | 'pcma' | 'aac';
+  sampleRate: number;
+  channels: number;
+  /** AAC AudioSpecificConfig, base64. AAC only. */
+  config?: string;
 }
 
 export type ServerMessage = StatusMessage | CodecMessage;
 
+/** Which kind of camera driver runs the camera. */
+export type CameraKind = 'kasa' | 'onvif';
+
 export interface CameraInfo {
+  kind: CameraKind;
   alias: string;
   model: string;
-  firmware: string;
+  firmware?: string;
   host: string;
   resolution?: string;
   /** Wi-Fi signal strength in dBm. */
@@ -112,7 +125,14 @@ export interface ApiError {
 
 /** Reply to GET /api/settings. It never holds a password. */
 export interface SettingsResponse {
-  camera: { username: string; alias?: string; localOnly: boolean } | null;
+  camera: {
+    kind: CameraKind;
+    username: string;
+    alias?: string;
+    localOnly: boolean;
+    /** The stream profile a standard camera uses. */
+    profileToken?: string;
+  } | null;
   /** True when the request comes from this computer. */
   local: boolean;
   desktop: boolean;
@@ -196,3 +216,54 @@ export interface PairCodeResponse {
   url: string;
   expiresAt: string;
 }
+
+/** A standard (ONVIF) camera found on the network. */
+export interface OnvifScanCamera {
+  endpointId: string;
+  host: string;
+  port: number;
+  name?: string;
+}
+
+export interface OnvifScanResult {
+  cameras: OnvifScanCamera[];
+}
+
+/** How to reach a standard camera: its ONVIF address, or a typed-in stream address. */
+export type OnvifLogin =
+  | { host: string; port?: number; username: string; password: string }
+  | { rtspUrl: string; username: string; password: string };
+
+/** POST /api/setup/onvif/save: the login, the chosen profile, and the id from the scan. */
+export type OnvifSaveBody = OnvifLogin & { profileToken?: string; endpointId?: string };
+
+export interface OnvifProfileInfo {
+  token: string;
+  name: string;
+  codec: 'h264' | 'h265';
+  width: number;
+  height: number;
+}
+
+/** Reply to POST /api/setup/onvif/check. Nothing is saved. */
+export interface OnvifCheckResult {
+  model?: string;
+  profiles: OnvifProfileInfo[];
+  /** The profile Kasa Home would watch. */
+  picked: string;
+}
+
+/** Reply to GET /api/settings/camera-profiles. */
+export interface OnvifProfilesResult {
+  profiles: OnvifProfileInfo[];
+  current?: string;
+}
+
+/** Reply to POST /api/setup/onvif/save. */
+export interface OnvifSaveResult {
+  saved: { model?: string; host: string };
+}
+
+/** Error codes for the standard-camera checks. */
+export type OnvifCheckError =
+  'bad-address' | 'camera-login' | 'video-format' | 'no-answer' | 'onvif-off';

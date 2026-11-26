@@ -72,7 +72,7 @@ export function toRbsp(nal: Uint8Array): Uint8Array {
   return out.subarray(0, o);
 }
 
-class BitReader {
+export class BitReader {
   private pos = 0;
   constructor(private readonly data: Uint8Array) {}
 

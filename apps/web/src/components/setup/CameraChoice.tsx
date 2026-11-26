@@ -4,7 +4,13 @@ export type CameraKind = 'existing' | 'account' | 'local';
 
 export const TP_LINK_URL = 'https://myproducts.tp-link.com';
 
-export function CameraChoice({ onChoose }: { onChoose(kind: CameraKind): void }) {
+export function CameraChoice({
+  onChoose,
+  onBack,
+}: {
+  onChoose(kind: CameraKind): void;
+  onBack?: () => void;
+}) {
   const heading = useHeadingFocus();
   return (
     <div className="login">
@@ -43,6 +49,11 @@ export function CameraChoice({ onChoose }: { onChoose(kind: CameraKind): void })
             could watch. The Kasa app won&apos;t work with it.
           </p>
         </div>
+        {onBack && (
+          <button className="link" type="button" onClick={onBack}>
+            Back
+          </button>
+        )}
       </div>
     </div>
   );

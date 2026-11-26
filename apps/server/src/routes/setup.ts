@@ -13,6 +13,7 @@ import { findWorkingLogin } from '../kasa/setup.js';
 import { Onboarding, OnboardingStateError, type OnboardingOptions } from '../setup/onboarding.js';
 import { createWifiSwitcher, type WifiSwitcher } from '../setup/wifiSwitcher.js';
 import { isLocalRequest, secureCookies } from '../security/remoteRequest.js';
+import { registerOnvifSetupRoutes } from './onvifSetup.js';
 import { loadOrCreateSecret } from '../security/dataDir.js';
 import { hashPassword } from '../security/passwordHash.js';
 import { passwordCheckFromHash, sessionCookie, SessionManager } from '../security/session.js';
@@ -275,6 +276,33 @@ export async function checkCameraLogin(
   return { chosen: working[0]! };
 }
 
+/**
+ * Check a Kasa login and save it as the camera, keeping every other setting.
+ * Replaces a standard camera too, so this is also how to switch back to Kasa.
+ */
+export async function saveKasaCamera(
+  deps: { config: Config; settings: SettingsStore; reload?: () => Promise<void> },
+  req: FastifyRequest<{ Body: { username: string; password: string; alias?: string } }>,
+  reply: FastifyReply,
+): Promise<FastifyReply | SetupExistingResult> {
+  const { username, password } = req.body;
+  const found = await checkCameraLogin(req, deps.config, req.body);
+  if ('fail' in found) return reply.code(found.fail.status).send(found.fail.body);
+  if ('choose' in found) return { choose: found.choose };
+  const saved = deps.settings.load();
+  deps.settings.save({
+    ...saved,
+    camera: {
+      username,
+      password,
+      alias: found.chosen.alias,
+      localOnly: saved.camera?.localOnly ?? false,
+    },
+  });
+  reloadAfterReply(deps, reply);
+  return { saved: toSetupCamera(found.chosen) };
+}
+
 export function toSetupCamera(d: DiscoveredDevice): SetupCamera {
   return { alias: d.alias, model: d.model, host: d.host };
 }
@@ -334,8 +362,41 @@ export async function registerSetupRoutes(app: FastifyInstance, deps: SetupDeps)
     },
   );
 
+  // Change the camera to a Kasa one, from this computer, signed in.
+  app.post<{ Body: { username: string; password: string; alias?: string } }>(
+    '/api/setup/kasa-camera',
+    { schema: existingCameraSchema },
+    async (req, reply) => {
+      if (config.fromEnv.camera) return reply.code(409).send(cameraFromEnv);
+      if (
+        config.setupComplete &&
+        !(isLocalRequest(req) && (deps.isAuthenticated?.(req) ?? false))
+      ) {
+        return reply.code(403).send(signInHere);
+      }
+      return saveKasaCamera(deps, req, reply);
+    },
+  );
+
+  registerOnvifSetupRoutes(app, {
+    config,
+    settings,
+    ...(deps.isAuthenticated ? { isAuthenticated: deps.isAuthenticated } : {}),
+    reloadAfter,
+  });
+
   registerOnboardingRoutes(app, deps);
 }
+
+const cameraFromEnv: ApiError = {
+  error: 'camera-from-env',
+  message: 'The camera login comes from KASA_USERNAME and KASA_PASSWORD, so change it there.',
+};
+
+const signInHere: ApiError = {
+  error: 'sign-in-here',
+  message: 'Sign in on this computer to change the camera.',
+};
 
 function registerOnboardingRoutes(app: FastifyInstance, deps: SetupDeps): void {
   const { config, settings } = deps;

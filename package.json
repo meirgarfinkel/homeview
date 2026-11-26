@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "pnpm -r --parallel --filter @kasa/server --filter @kasa/web dev",
     "dev:fake-camera": "pnpm --filter @kasa/server fake-camera",
+    "dev:fake-onvif": "pnpm --filter @kasa/server fake-onvif",
     "build": "pnpm -r build",
     "start": "pnpm --filter @kasa/server start",
     "desktop": "pnpm --filter @kasa/desktop start",

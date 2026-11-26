@@ -1,8 +1,9 @@
 /**
- * Just enough ISO-BMFF (fragmented MP4) writing to feed H.264 to the browser's
+ * Just enough ISO-BMFF (fragmented MP4) writing to feed H.264 or H.265 to the browser's
  * Media Source Extensions: one init segment, then one moof+mdat per frame.
  * Reference: ISO/IEC 14496-12 and 14496-15.
  */
+import { H265NalType, parseH265Sps } from './h265.js';
 
 export const VIDEO_TIMESCALE = 90_000;
 const TRACK_ID = 1;
@@ -42,14 +43,21 @@ const UNITY_MATRIX = Buffer.concat(
   [0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000].map((v) => u32(v)),
 );
 
-export interface VideoTrackConfig {
-  width: number;
-  height: number;
-  sps: Buffer[];
-  pps: Buffer[];
-}
+export type VideoTrackConfig =
+  | { codec: 'h264'; width: number; height: number; sps: Buffer[]; pps: Buffer[] }
+  | {
+      codec: 'h265';
+      width: number;
+      height: number;
+      vps: Buffer[];
+      sps: Buffer[];
+      pps: Buffer[];
+    };
 
-function avcC(cfg: VideoTrackConfig): Buffer {
+type H264Track = Extract<VideoTrackConfig, { codec: 'h264' }>;
+type H265Track = Extract<VideoTrackConfig, { codec: 'h265' }>;
+
+function avcC(cfg: H264Track): Buffer {
   const first = cfg.sps[0];
   if (!first || first.length < 4) throw new Error('avcC: missing SPS');
   return box(
@@ -66,9 +74,38 @@ function avcC(cfg: VideoTrackConfig): Buffer {
   );
 }
 
-function avc1(cfg: VideoTrackConfig): Buffer {
+/** HEVCDecoderConfigurationRecord, ISO/IEC 14496-15 8.3.3.1. */
+function hvcC(cfg: H265Track): Buffer {
+  const first = cfg.sps[0];
+  if (!first) throw new Error('hvcC: missing SPS');
+  const info = parseH265Sps(first);
+  const array = (type: number, nals: Buffer[]) => [
+    u8(0x80 | type), // array_completeness + NAL unit type
+    u16(nals.length),
+    ...nals.flatMap((n) => [u16(n.length), n]),
+  ];
   return box(
-    'avc1',
+    'hvcC',
+    u8(1), // configurationVersion
+    info.profileTierLevel, // profile space/tier/idc, compatibility, constraints, level
+    u16(0xf000), // min_spatial_segmentation_idc = 0
+    u8(0xfc), // parallelismType = 0
+    u8(0xfc | info.chromaFormatIdc),
+    u8(0xf8 | (info.bitDepthLuma - 8)),
+    u8(0xf8 | (info.bitDepthChroma - 8)),
+    u16(0), // avgFrameRate
+    u8((info.maxSubLayers << 3) | (info.temporalIdNesting ? 4 : 0) | 3), // 4-byte lengths
+    u8(3),
+    ...array(H265NalType.VPS, cfg.vps),
+    ...array(H265NalType.SPS, cfg.sps),
+    ...array(H265NalType.PPS, cfg.pps),
+  );
+}
+
+/** The sample entry: avc1 + avcC for H.264, hvc1 + hvcC for H.265. */
+function sampleEntry(cfg: VideoTrackConfig): Buffer {
+  return box(
+    cfg.codec === 'h264' ? 'avc1' : 'hvc1',
     zeros(6), // reserved
     u16(1), // data_reference_index
     zeros(16), // pre_defined + reserved
@@ -81,7 +118,7 @@ function avc1(cfg: VideoTrackConfig): Buffer {
     zeros(32), // compressorname
     u16(0x0018), // depth
     Buffer.from([0xff, 0xff]), // pre_defined = -1
-    avcC(cfg),
+    cfg.codec === 'h264' ? avcC(cfg) : hvcC(cfg),
   );
 }
 
@@ -90,7 +127,7 @@ export function initSegment(cfg: VideoTrackConfig): Buffer {
     'ftyp',
     Buffer.from('isom', 'latin1'),
     u32(0x200),
-    Buffer.from('isomiso6avc1mp41', 'latin1'),
+    Buffer.from(cfg.codec === 'h264' ? 'isomiso6avc1mp41' : 'isomiso6hvc1mp41', 'latin1'),
   );
 
   const mvhd = box(
@@ -151,7 +188,7 @@ export function initSegment(cfg: VideoTrackConfig): Buffer {
   );
   const stbl = box(
     'stbl',
-    box('stsd', fullBoxHeader(0, 0), u32(1), avc1(cfg)),
+    box('stsd', fullBoxHeader(0, 0), u32(1), sampleEntry(cfg)),
     box('stts', fullBoxHeader(0, 0), u32(0)),
     box('stsc', fullBoxHeader(0, 0), u32(0)),
     box('stsz', fullBoxHeader(0, 0), u32(0), u32(0)),

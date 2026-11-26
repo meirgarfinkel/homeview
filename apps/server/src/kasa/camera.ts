@@ -158,6 +158,7 @@ export class Camera {
 
 export function toCameraInfo(host: string, s: CameraSysinfo): CameraInfo {
   return {
+    kind: 'kasa',
     alias: String(s.alias ?? 'Kasa camera'),
     model: String(s.model ?? 'unknown'),
     firmware: String(s.sw_ver ?? 'unknown'),

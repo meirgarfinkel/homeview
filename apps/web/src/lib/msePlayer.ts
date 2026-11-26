@@ -5,6 +5,9 @@
 
 type MediaSourceCtor = typeof MediaSource;
 
+export const H265_UNSUPPORTED =
+  "This browser can't play this camera's video (H.265). Try another browser, or set the camera to H.264 in its own app.";
+
 function mediaSourceCtor(): MediaSourceCtor | undefined {
   const w = window as unknown as {
     ManagedMediaSource?: MediaSourceCtor;
@@ -42,6 +45,7 @@ export class MsePlayer {
     const Ctor = mediaSourceCtor();
     if (!Ctor) throw new Error('Media Source Extensions are not available in this browser');
     if (!Ctor.isTypeSupported(mimeType)) {
+      if (/codecs="(hvc1|hev1)/.test(mimeType)) throw new Error(H265_UNSUPPORTED);
       throw new Error(`This browser cannot play ${mimeType}`);
     }
     const ms = new Ctor();

@@ -4,9 +4,8 @@ import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import type { CameraInfo } from '@kasa/shared';
 import { viewerCheck, type Config } from './config.js';
-import type { PtzController } from './kasa/ptz.js';
+import type { CameraDriver } from './camera/driver.js';
 import type { LiveHub } from './media/liveHub.js';
 import { loggerOptions, type Logger } from './logger.js';
 import { notSetUp, registerApiRoutes } from './routes/api.js';
@@ -30,10 +29,8 @@ import { isLocalRequest, isRemote } from './security/remoteRequest.js';
 import { parseCookies, SESSION_COOKIE, SessionManager } from './security/session.js';
 import type { SettingsStore } from './settings/store.js';
 
-export interface CameraService {
-  info(): Promise<CameraInfo>;
-  readonly ptz: PtzController;
-}
+/** What the routes need from the camera. */
+export type CameraService = Pick<CameraDriver, 'info' | 'ptz'>;
 
 declare module 'fastify' {
   interface FastifyRequest {

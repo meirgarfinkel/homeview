@@ -1,15 +1,16 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ApiError, SettingsResponse, SetupExistingResult } from '@kasa/shared';
+import type { ApiError, OnvifProfilesResult, SettingsResponse } from '@kasa/shared';
 import type { Config } from '../config.js';
 import { isLocalRequest } from '../security/remoteRequest.js';
 import { verifyPassword } from '../security/passwordHash.js';
 import type { SettingsStore } from '../settings/store.js';
 import type { ServerHooks } from '../app.js';
+import { savedCameraProfiles } from './onvifSetup.js';
 import {
-  checkCameraLogin,
   existingCameraSchema,
   MIN_VIEWER_PASSWORD,
   reloadAfterReply,
+  saveKasaCamera,
   saveViewerPassword,
 } from './setup.js';
 
@@ -68,6 +69,30 @@ const passwordSchema = {
   },
 } as const;
 
+const profileSchema = {
+  body: {
+    type: 'object',
+    required: ['profileToken'],
+    additionalProperties: false,
+    properties: { profileToken: { type: 'string', minLength: 1, maxLength: 256 } },
+  },
+} as const;
+
+const notOnvif: ApiError = {
+  error: 'not-onvif',
+  message: 'Only a standard camera has stream profiles to choose from.',
+};
+
+const noAnswer: ApiError = {
+  error: 'no-answer',
+  message: 'No answer from the camera.',
+};
+
+const noSuchProfile: ApiError = {
+  error: 'no-such-profile',
+  message: "The camera doesn't have that stream.",
+};
+
 const autostartSchema = {
   body: {
     type: 'object',
@@ -86,7 +111,11 @@ export async function registerSettingsRoutes(
   app.get('/api/settings', async (req): Promise<SettingsResponse> => {
     const camera = config.camera.username
       ? {
+          kind: config.camera.kind,
           username: config.camera.username,
+          ...(config.camera.onvif?.profileToken
+            ? { profileToken: config.camera.onvif.profileToken }
+            : {}),
           ...(config.camera.alias ? { alias: config.camera.alias } : {}),
           localOnly: settings.load().camera?.localOnly ?? false,
         }
@@ -124,28 +153,50 @@ export async function registerSettingsRoutes(
     { schema: existingCameraSchema },
     async (req, reply) => {
       if (config.fromEnv.camera) return reply.code(409).send(cameraFromEnv);
-      const { username, password } = req.body;
-      const found = await checkCameraLogin(req, config, req.body);
-      if ('fail' in found) return reply.code(found.fail.status).send(found.fail.body);
-      if ('choose' in found) {
-        const result: SetupExistingResult = { choose: found.choose };
-        return result;
-      }
-      const saved = settings.load();
-      settings.save({
-        ...saved,
-        camera: {
-          username,
-          password,
-          alias: found.chosen.alias,
-          localOnly: saved.camera?.localOnly ?? false,
-        },
-      });
-      reloadAfterReply(deps, reply);
-      const result: SetupExistingResult = {
-        saved: { alias: found.chosen.alias, model: found.chosen.model, host: found.chosen.host },
+      return saveKasaCamera(deps, req, reply);
+    },
+  );
+
+  // A standard camera's streams, to choose from on this computer.
+  app.get('/api/settings/camera-profiles', async (req, reply) => {
+    if (!isLocalRequest(req)) return reply.code(403).send(localOnly);
+    if (config.camera.kind !== 'onvif' || !config.camera.onvif || config.camera.onvif.rtspUrl) {
+      return reply.code(409).send(notOnvif);
+    }
+    try {
+      const result: OnvifProfilesResult = {
+        profiles: await savedCameraProfiles(config),
+        ...(config.camera.onvif.profileToken ? { current: config.camera.onvif.profileToken } : {}),
       };
       return result;
+    } catch {
+      return reply.code(504).send(noAnswer);
+    }
+  });
+
+  // A standard camera's stream profile, from this computer.
+  app.post<{ Body: { profileToken: string } }>(
+    '/api/settings/camera-profile',
+    { schema: profileSchema },
+    async (req, reply) => {
+      if (!isLocalRequest(req)) return reply.code(403).send(localOnly);
+      if (config.camera.kind !== 'onvif' || !config.camera.onvif || config.camera.onvif.rtspUrl) {
+        return reply.code(409).send(notOnvif);
+      }
+      const { profileToken } = req.body;
+      const profiles = await savedCameraProfiles(config).catch(() => []);
+      if (!profiles.some((p) => p.token === profileToken)) {
+        return reply.code(400).send(noSuchProfile);
+      }
+      const saved = settings.load();
+      if (saved.camera?.onvif) {
+        settings.save({
+          ...saved,
+          camera: { ...saved.camera, onvif: { ...saved.camera.onvif, profileToken } },
+        });
+      }
+      reloadAfterReply(deps, reply);
+      return reply.code(204).send();
     },
   );
 

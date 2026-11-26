@@ -163,7 +163,7 @@ export function Monitor({
           onDoubleClick={toggleFullscreen}
         >
           {soundActive && <div className="sound-badge">Sound detected</div>}
-          {isLive && !live.listening && (
+          {isLive && !live.listening && !live.soundUnsupported && (
             <button type="button" className="listen-cta" onClick={() => void live.startListening()}>
               <ListenIcon /> Tap to listen
             </button>
@@ -181,40 +181,52 @@ export function Monitor({
         <aside className="side">
           <section className="panel">
             <h2>Sound</h2>
-            <SoundMeter levelRef={live.levelRef} threshold={sensitivity} onSound={setSoundActive} />
-            <div className="row">
-              <button
-                type="button"
-                className={`btn btn-icon${live.listening ? ' btn-on' : ''}`}
-                onClick={() => void (live.listening ? live.stopListening() : live.startListening())}
-                aria-pressed={live.listening}
-                aria-label={live.listening ? 'Mute sound' : 'Listen'}
-                title={live.listening ? 'Mute sound (M)' : 'Listen (M)'}
-              >
-                {live.listening ? <SoundOnIcon /> : <SoundOffIcon />}
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={2}
-                step={0.05}
-                value={live.volume}
-                onChange={(e) => live.setVolume(Number(e.target.value))}
-                aria-label="Volume"
-                disabled={!live.listening}
-              />
-            </div>
-            <label className="field">
-              <span>Alert when louder than</span>
-              <input
-                type="range"
-                min={0.2}
-                max={0.95}
-                step={0.05}
-                value={sensitivity}
-                onChange={(e) => setSensitivity(Number(e.target.value))}
-              />
-            </label>
+            {live.soundUnsupported ? (
+              <p className="hint">This camera&apos;s sound format isn&apos;t supported yet.</p>
+            ) : (
+              <>
+                <SoundMeter
+                  levelRef={live.levelRef}
+                  threshold={sensitivity}
+                  onSound={setSoundActive}
+                />
+                <div className="row">
+                  <button
+                    type="button"
+                    className={`btn btn-icon${live.listening ? ' btn-on' : ''}`}
+                    onClick={() =>
+                      void (live.listening ? live.stopListening() : live.startListening())
+                    }
+                    aria-pressed={live.listening}
+                    aria-label={live.listening ? 'Mute sound' : 'Listen'}
+                    title={live.listening ? 'Mute sound (M)' : 'Listen (M)'}
+                  >
+                    {live.listening ? <SoundOnIcon /> : <SoundOffIcon />}
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    value={live.volume}
+                    onChange={(e) => live.setVolume(Number(e.target.value))}
+                    aria-label="Volume"
+                    disabled={!live.listening}
+                  />
+                </div>
+                <label className="field">
+                  <span>Alert when louder than</span>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={0.95}
+                    step={0.05}
+                    value={sensitivity}
+                    onChange={(e) => setSensitivity(Number(e.target.value))}
+                  />
+                </label>
+              </>
+            )}
           </section>
 
           {showPtz && <PtzPad onError={setPtzError} />}
