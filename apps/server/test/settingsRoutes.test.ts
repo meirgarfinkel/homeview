@@ -129,6 +129,7 @@ describe('GET /api/settings', () => {
       local: true,
       desktop: false,
       autostart: null,
+      version: null,
       managedByEnv: [],
     });
   });
@@ -136,14 +137,19 @@ describe('GET /api/settings', () => {
   it('reports autostart from the hook and settings from the environment', async () => {
     const s = await start(await completeSettings(), {
       env: { KASA_USERNAME: USER, KASA_PASSWORD: PASS },
-      hooks: { getAutostart: () => true, setAutostart: () => {} },
+      hooks: { getAutostart: () => true, setAutostart: () => {}, appVersion: () => '0.1.1' },
       desktop: true,
     });
     const cookie = await login(s);
     const body = (await (
       await send(s, 'GET', '/api/settings', undefined, { cookie })
     ).json()) as SettingsResponse;
-    expect(body).toMatchObject({ desktop: true, autostart: true, managedByEnv: ['camera'] });
+    expect(body).toMatchObject({
+      desktop: true,
+      autostart: true,
+      version: '0.1.1',
+      managedByEnv: ['camera'],
+    });
   });
 
   it('names the viewer password when the environment sets it', async () => {

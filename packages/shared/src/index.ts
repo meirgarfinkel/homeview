@@ -138,6 +138,8 @@ export interface SettingsResponse {
   desktop: boolean;
   /** Start at login. Null when this server can't change it. */
   autostart: boolean | null;
+  /** The desktop app's version. Null outside the desktop app. */
+  version: string | null;
   /** Settings that environment variables set, which the page shows as read-only. */
   managedByEnv: ('viewerPassword' | 'camera')[];
 }

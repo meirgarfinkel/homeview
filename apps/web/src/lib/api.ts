@@ -18,6 +18,7 @@ import type {
   SettingsResponse,
   SetupExistingResult,
   StatusResponse,
+  UpdateCheckResult,
   UpdateStatus,
 } from '@kasa/shared';
 
@@ -114,6 +115,7 @@ export const api = {
   quit: () => post('/api/app/quit'),
   update: () => request<UpdateStatus>('/api/app/update'),
   installUpdate: () => post('/api/app/update/install'),
+  checkForUpdates: () => post<{ result: UpdateCheckResult }>('/api/app/update/check'),
   remote: {
     status: () => request<RemoteStatus>('/api/remote'),
     enable: (on: boolean) => post('/api/remote/enable', { on }),

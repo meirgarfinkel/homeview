@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import type { SettingsResponse, SetupCamera } from '@kasa/shared';
+import type { SettingsResponse, SetupCamera, UpdateStatus } from '@kasa/shared';
+import { useRestartWatch } from '../hooks/useRestartWatch';
 import { api } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { AwayFromHome } from './AwayFromHome';
@@ -187,6 +188,101 @@ function CameraLogin({ saved, fromEnv }: { saved: string | undefined; fromEnv: b
   );
 }
 
+/** How often to ask while an update downloads after "Check for updates". */
+const DOWNLOAD_POLL_MS = 2000;
+
+/** The version, a check on request, and restarting into a downloaded update. */
+function UpdatesSection({ version }: { version: string }) {
+  /** Undefined until the first answer, and when this copy can't update itself. */
+  const [status, setStatus] = useState<UpdateStatus>();
+  const [note, setNote] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [checking, setChecking] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    api.update().then(
+      (s) => setStatus(s ?? undefined),
+      () => setStatus(undefined), // a copy run from source: no section
+    );
+  }, []);
+
+  // While it downloads, keep asking until it's ready or has failed.
+  const downloading = status?.state === 'downloading';
+  useEffect(() => {
+    if (!downloading) return;
+    const timer = setInterval(() => {
+      api.update().then(setStatus, () => undefined);
+    }, DOWNLOAD_POLL_MS);
+    return () => clearInterval(timer);
+  }, [downloading]);
+
+  const failed = useCallback((s: UpdateStatus) => {
+    setStatus(s);
+    setRestarting(false);
+  }, []);
+  useRestartWatch(restarting, failed);
+
+  if (!status) return null;
+
+  const check = async () => {
+    setChecking(true);
+    setNote(undefined);
+    setError(undefined);
+    try {
+      const { result } = await api.checkForUpdates();
+      const next = await api.update();
+      setStatus(next);
+      if (result === 'up-to-date') setNote('HomeView is up to date.');
+    } catch (err) {
+      setError(`Couldn't check for updates: ${errorText(err)}`);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const restart = () => {
+    setRestarting(true);
+    api.installUpdate().catch((err: unknown) => {
+      setRestarting(false);
+      setError(errorText(err));
+    });
+  };
+
+  return (
+    <Section title="Updates">
+      <p>This is HomeView {version}.</p>
+      {restarting ? (
+        <p role="status">Restarting…</p>
+      ) : status.state === 'ready' ? (
+        <>
+          <p role="status">HomeView {status.version} is ready.</p>
+          <div className="row">
+            <button className="btn btn-primary" type="button" onClick={restart}>
+              Restart to update
+            </button>
+          </div>
+        </>
+      ) : status.state === 'downloading' ? (
+        <p role="status">Downloading HomeView {status.version}…</p>
+      ) : (
+        <>
+          {status.state === 'error' && (
+            <p className="error-text">Couldn't update HomeView: {status.message}</p>
+          )}
+          <div className="row">
+            <button className="btn" type="button" disabled={checking} onClick={() => void check()}>
+              {checking ? 'Checking…' : 'Check for updates'}
+            </button>
+          </div>
+          {note && <p role="status">{note}</p>}
+        </>
+      )}
+      <Failure text={error} />
+    </Section>
+  );
+}
+
 function StopSection() {
   const [asking, setAsking] = useState(false);
   const [stopped, setStopped] = useState(false);
@@ -337,6 +433,9 @@ export function Settings({
               <Section title="Start when this computer starts">
                 <AutostartBox initial={settings.autostart} />
               </Section>
+            )}
+            {settings.local && settings.desktop && settings.version !== null && (
+              <UpdatesSection version={settings.version} />
             )}
             {settings.local && settings.desktop && <StopSection />}
           </>

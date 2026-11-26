@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { SettingsResponse } from '@kasa/shared';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Settings } from './Settings';
 
 vi.mock('./setup/Onboarding', () => ({
@@ -19,6 +19,7 @@ const base: SettingsResponse = {
   local: true,
   desktop: true,
   autostart: false,
+  version: null,
   managedByEnv: [],
 };
 let settings: SettingsResponse;
@@ -204,4 +205,73 @@ it('lets a phone at home pair itself for use away', async () => {
 it('hides the phone button unless asked to show it', async () => {
   await open({ local: false });
   expect(screen.queryByRole('button', { name: 'Use this phone away from home' })).toBeNull();
+});
+
+describe('Updates', () => {
+  const updates = (status: unknown, check?: Response) => {
+    reply = (path) => {
+      if (path === '/api/app/update') return json(status);
+      if (path === '/api/app/update/check') return check;
+      return undefined;
+    };
+  };
+
+  it('shows the version and checks for updates on request', async () => {
+    updates({ state: 'none' }, json({ result: 'up-to-date' }));
+    const user = userEvent.setup();
+    await open({ version: '0.1.0' });
+    expect(await screen.findByRole('heading', { name: 'Updates' })).toBeTruthy();
+    expect(screen.getByText('This is HomeView 0.1.0.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(await screen.findByText('HomeView is up to date.')).toBeTruthy();
+    expect(calls('/api/app/update/check')).toHaveLength(1);
+  });
+
+  it('says what it is downloading', async () => {
+    updates({ state: 'none' }, json({ result: 'downloading' }));
+    const user = userEvent.setup();
+    await open({ version: '0.1.0' });
+    await screen.findByRole('heading', { name: 'Updates' });
+    updates({ state: 'downloading', version: '0.2.0' }, json({ result: 'downloading' }));
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(await screen.findByText('Downloading HomeView 0.2.0…')).toBeTruthy();
+  });
+
+  it('says why a check failed', async () => {
+    updates(
+      { state: 'none' },
+      json({ error: 'update-check-failed', message: 'GitHub answered 503' }, 502),
+    );
+    const user = userEvent.setup();
+    await open({ version: '0.1.0' });
+    await screen.findByRole('heading', { name: 'Updates' });
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(await screen.findByText("Couldn't check for updates: GitHub answered 503")).toBeTruthy();
+  });
+
+  it('offers to restart into an update that is ready', async () => {
+    updates({ state: 'ready', version: '0.2.0' });
+    const user = userEvent.setup();
+    await open({ version: '0.1.0' });
+    expect(await screen.findByText('HomeView 0.2.0 is ready.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Restart to update' }));
+    expect(await screen.findByText('Restarting…')).toBeTruthy();
+    expect(calls('/api/app/update/install')).toHaveLength(1);
+  });
+
+  it('is hidden when this copy cannot update itself', async () => {
+    reply = (path) =>
+      path === '/api/app/update' ? json({ error: 'not-available', message: 'x' }, 404) : undefined;
+    await open({ version: null });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole('heading', { name: 'Updates' })).toBeNull();
+  });
+
+  it('is hidden on other devices', async () => {
+    updates({ state: 'ready', version: '0.2.0' });
+    await open({ local: false, version: '0.1.0' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole('heading', { name: 'Updates' })).toBeNull();
+    expect(calls('/api/app/update')).toHaveLength(0);
+  });
 });

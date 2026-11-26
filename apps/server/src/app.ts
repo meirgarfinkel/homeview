@@ -58,6 +58,8 @@ export interface ServerHooks {
   quit?(): void;
   /** Opens a link in the system browser. */
   openExternal?(url: string): void;
+  /** The desktop app's version, as Settings shows it. */
+  appVersion?(): string;
   /** Where the app's self-update stands. */
   updateStatus?(): UpdateStatus;
   /** Install the downloaded update and restart into it. */

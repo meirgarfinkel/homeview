@@ -162,6 +162,7 @@ async function run(): Promise<void> {
         refreshTray();
       },
       quit: () => void quit(),
+      appVersion: () => app.getVersion(),
       ...(updater
         ? {
             updateStatus: () => updater.status(),

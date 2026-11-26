@@ -125,6 +125,7 @@ export async function registerSettingsRoutes(
       local: isLocalRequest(req),
       desktop: deps.desktop,
       autostart: hooks?.getAutostart ? hooks.getAutostart() : null,
+      version: hooks?.appVersion ? hooks.appVersion() : null,
       managedByEnv: [
         ...(config.fromEnv.viewerPassword ? (['viewerPassword'] as const) : []),
         ...(config.fromEnv.camera ? (['camera'] as const) : []),
@@ -236,7 +237,12 @@ export async function registerSettingsRoutes(
 
   app.post('/api/app/update/check', async (req, reply) => {
     if (!appOnly(req, reply, hooks?.checkForUpdates)) return reply;
-    return { result: await hooks!.checkForUpdates!() };
+    try {
+      return { result: await hooks!.checkForUpdates!() };
+    } catch (err) {
+      const failed: ApiError = { error: 'update-check-failed', message: (err as Error).message };
+      return reply.code(502).send(failed);
+    }
   });
 
   app.post('/api/app/quit', async (req, reply) => {
