@@ -6,6 +6,7 @@ import { NotPaired } from './components/NotPaired';
 import { Pair } from './components/Pair';
 import { Monitor } from './components/Monitor';
 import { Settings } from './components/Settings';
+import { UpdateBar } from './components/UpdateBar';
 import { AllSet } from './components/setup/AllSet';
 import { SetupWizard } from './components/setup/SetupWizard';
 import { NotSetUp } from './components/setup/NotSetUp';
@@ -172,6 +173,7 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
   }
   return (
     <>
+      {session.local && session.desktop && <UpdateBar />}
       <Monitor
         onSignOut={session.authRequired ? () => void api.logout().then(refresh) : undefined}
         // Settings never open from away: the server refuses them there.
