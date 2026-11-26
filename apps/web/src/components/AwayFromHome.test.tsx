@@ -19,7 +19,11 @@ beforeEach(() => {
     if (path === '/api/remote' && !init?.method) return Promise.resolve(json(status));
     if (path === '/api/remote/pair-code')
       return Promise.resolve(
-        json({ url: 'https://homeview.ts.net/pair#abc', expiresAt: '2026-11-26T12:00:00Z' }),
+        json({
+          url: 'https://homeview.ts.net/pair#abc',
+          // Five minutes after "now", real or faked: a fixed time expires once the day passes it.
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        }),
       );
     return Promise.resolve(new Response(null, { status: 204 }));
   });
@@ -186,7 +190,7 @@ const iPhone = { id: 'd1', name: 'iPhone', createdAt: '2026-11-20T10:00:00Z' };
 /** Shows the section while on, with fake timers, and opens a pairing code. */
 const showCode = async () => {
   vi.useFakeTimers();
-  // The fake pairing code expires at 12:00.
+  // The fake pairing code expires five minutes after this, at 12:00.
   vi.setSystemTime(new Date('2026-11-26T11:55:00Z'));
   status = { ...base, phase: 'on', url: 'https://homeview.ts.net', devices: [iPhone] };
   render(<AwayFromHome />);

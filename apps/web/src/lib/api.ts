@@ -73,9 +73,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body.message,
     );
   }
-  // 202 is "accepted, will do": the update install answers that with no body.
-  if (res.status === 204 || res.status === 202) return undefined as T;
-  return (await res.json()) as T;
+  if (res.status === 204) return undefined as T;
+  // A 202 may come with a body (onboarding, pairing) or without one (the update install).
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 const post = <T = void>(path: string, body: unknown = {}) =>
