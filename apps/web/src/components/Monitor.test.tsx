@@ -33,15 +33,19 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-it("says when the camera's sound can't be played, and hides the listen button", () => {
+it("says when the camera's sound can't be played", () => {
   live.soundUnsupported = true;
   render(<Monitor />);
   expect(screen.getByText("This camera's sound format isn't supported yet.")).toBeTruthy();
-  expect(screen.queryByText('Tap to listen')).toBeNull();
 });
 
 it('shows no sound message for a playable format', () => {
   render(<Monitor />);
   expect(screen.queryByText("This camera's sound format isn't supported yet.")).toBeNull();
-  expect(screen.getByText('Tap to listen')).toBeTruthy();
+});
+
+it('turns sound on from the Sound panel, with no button over the video', () => {
+  render(<Monitor />);
+  expect(screen.queryByText('Tap to listen')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Listen' })).toBeTruthy();
 });

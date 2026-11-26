@@ -50,14 +50,6 @@ export const SoundOffIcon = (p: IconProps) => (
   </Icon>
 );
 
-export const ListenIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M5.2 14.8c-.4-5.3 2.2-9.7 6.9-9.8 4.6 0 7.4 4.2 6.8 9.5" />
-    <path d="M4.9 14.2c1.4-.3 2.6.2 2.8 1.6.2 1.4.3 2.8-.4 3.6-.9.6-2.1.4-2.6-.4-.3-1.5-.2-3.1.2-4.8Z" />
-    <path d="M19 14.3c-1.4-.4-2.6.1-2.9 1.4-.2 1.4-.3 2.9.4 3.7.9.6 2.1.4 2.6-.4.4-1.5.3-3.1-.1-4.7Z" />
-  </Icon>
-);
-
 export const FullscreenIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4.2 9.3c-.1-1.6 0-3.3.1-4.9 1.6-.2 3.3-.1 4.9-.1" />

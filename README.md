@@ -137,8 +137,8 @@ it on private networks, or phones can't connect.
    "Advanced", then "Proceed" (or "visit this website"). Each browser asks
    only once.
 3. Type the password you chose.
-4. Tap "Tap to listen" to turn on sound. Browsers need one tap before they
-   play sound.
+4. Tap the speaker button in the Sound panel to turn on sound. Browsers need
+   one tap before they play sound.
 
 On the computer that runs HomeView, use `http://localhost:8090` instead.
 That address gives no certificate warning. If port 8090 is taken, HomeView
@@ -262,8 +262,8 @@ If the section shows a problem, click "Try again".
 - **Windows or the Mac won't open the installer.** See step 2. Both warnings
   appear once and are expected for unsigned apps.
 - **No tray icon on Linux.** See step 5.
-- **No sound.** Tap "Tap to listen" on the page, because browsers block
-  sound until you tap something. Check the phone isn't on silent.
+- **No sound.** Tap the speaker button in the Sound panel, because browsers
+  block sound until you tap something. Check the phone isn't on silent.
 - **The camera setup stops part way.** Click "Try again" if the page offers
   it, or reset the camera and start over. The Kasa phone app can also set up
   the camera as usual, and HomeView then works with it ("It already works

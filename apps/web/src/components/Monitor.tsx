@@ -6,7 +6,6 @@ import { api } from '../lib/api';
 import {
   CameraIcon,
   FullscreenIcon,
-  ListenIcon,
   PopOutIcon,
   SettingsIcon,
   SoundOffIcon,
@@ -163,11 +162,6 @@ export function Monitor({
           onDoubleClick={toggleFullscreen}
         >
           {soundActive && <div className="sound-badge">Sound detected</div>}
-          {isLive && !live.listening && !live.soundUnsupported && (
-            <button type="button" className="listen-cta" onClick={() => void live.startListening()}>
-              <ListenIcon /> Tap to listen
-            </button>
-          )}
           {stats?.width && (
             <div className="stage-meta">
               {stats.width}×{stats.height}
