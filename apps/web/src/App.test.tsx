@@ -17,7 +17,13 @@ vi.mock('./components/Monitor', async () => {
     ),
   };
 });
-vi.mock('./components/Pair', () => ({ Pair: () => <p>Pair page</p> }));
+vi.mock('./components/Pair', () => ({
+  Pair: ({ onPaired }: { onPaired(): void }) => (
+    <button type="button" onClick={onPaired}>
+      Pair page
+    </button>
+  ),
+}));
 vi.mock('./components/setup/AllSet', () => ({
   AllSet: ({ lanUrl, onContinue }: { lanUrl?: string; onContinue(): void }) => (
     <button type="button" onClick={onContinue}>
@@ -145,10 +151,39 @@ it('goes back to sign in when the server stops accepting this browser', async ()
   expect(screen.queryByRole('button', { name: 'Monitor screen' })).toBeNull();
 });
 
-it('shows the pairing page at /pair', async () => {
+it('shows the pairing page at /pair without asking for the session', async () => {
   window.history.replaceState(null, '', '/pair#code');
   render(<App />);
   expect(await screen.findByText('Pair page')).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('shows the camera after pairing, not the not-paired page', async () => {
+  const { default: userEvent } = await import('@testing-library/user-event');
+  window.history.replaceState(null, '', '/pair#code');
+  fetchMock.mockResolvedValue(session(true, { local: false, remote: true, remoteOn: true }));
+  render(<App />);
+  // Pair moves the address to / once the code is spent.
+  window.history.replaceState(null, '', '/');
+  await userEvent.setup().click(await screen.findByRole('button', { name: 'Pair page' }));
+  expect(await screen.findByRole('button', { name: 'Monitor screen' })).toBeTruthy();
+  expect(screen.getByText('Tip: add this page to your home screen.')).toBeTruthy();
+  expect(screen.queryByText(/This phone isn't set up/)).toBeNull();
+  expect(fetchMock.mock.calls.map(([p]) => p)).toEqual(['/api/session']);
+});
+
+it('shows the not-paired page once the live view says the phone was removed', async () => {
+  const { act } = await import('@testing-library/react');
+  const { notifyUnauthorized } = await import('./lib/api');
+  fetchMock.mockResolvedValueOnce(session(true, { local: false, remote: true, remoteOn: true }));
+  render(<App />);
+  await screen.findByRole('button', { name: 'Monitor screen' });
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ error: 'device-not-paired', message: 'x' }), { status: 401 }),
+  );
+  // What useLiveStream does when the socket closes with the removed-phone code.
+  act(() => notifyUnauthorized());
+  expect(await screen.findByText(/This phone isn't set up to watch from away/)).toBeTruthy();
 });
 
 it('shows the not-paired page, not the sign-in form, for an unpaired phone', async () => {

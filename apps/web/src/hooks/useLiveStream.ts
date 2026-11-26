@@ -53,6 +53,8 @@ export function useLiveStream(videoRef: RefObject<HTMLVideoElement | null>): Liv
           () => undefined,
         );
       },
+      // The phone was removed. The session check then shows the not-paired page.
+      onDeviceRemoved: notifyUnauthorized,
       onMessage: (msg) => {
         if (msg.type === 'status') {
           setStream(msg.state);

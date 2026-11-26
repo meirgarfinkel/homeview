@@ -39,6 +39,10 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
 
   /** Through the away-from-home address from a phone that was never paired. */
   const [notPaired, setNotPaired] = useState(false);
+  /** On the page a phone opens by scanning the code. The session waits until it is paired. */
+  const [pairing, setPairing] = useState(() => window.location.pathname === '/pair');
+  /** Just paired, so the camera page shows the home screen tip. */
+  const [justPaired, setJustPaired] = useState(false);
 
   const refresh = useCallback(() => {
     api.session().then(
@@ -52,7 +56,14 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
       },
     );
   }, []);
-  useEffect(refresh, [refresh]);
+  useEffect(() => {
+    if (!pairing) refresh();
+  }, [pairing, refresh]);
+
+  const afterPair = useCallback(() => {
+    setJustPaired(true);
+    setPairing(false);
+  }, []);
 
   // Signed out elsewhere (a password change): show the sign-in page again.
   useEffect(() => {
@@ -106,7 +117,7 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
     );
   }, [retryMs]);
 
-  if (window.location.pathname === '/pair') return <Pair />;
+  if (pairing) return <Pair onPaired={afterPair} />;
   if (notPaired) return <NotPaired />;
   if (error) {
     return (
@@ -160,10 +171,13 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
     );
   }
   return (
-    <Monitor
-      onSignOut={session.authRequired ? () => void api.logout().then(refresh) : undefined}
-      // Settings never open from away: the server refuses them there.
-      onOpenSettings={session.remote ? undefined : () => setSettingsOpen(true)}
-    />
+    <>
+      <Monitor
+        onSignOut={session.authRequired ? () => void api.logout().then(refresh) : undefined}
+        // Settings never open from away: the server refuses them there.
+        onOpenSettings={session.remote ? undefined : () => setSettingsOpen(true)}
+      />
+      {justPaired && <p className="hint pair-tip">Tip: add this page to your home screen.</p>}
+    </>
   );
 }

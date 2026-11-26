@@ -8,6 +8,9 @@
 
 export const LIVE_WS_PATH = '/api/live';
 
+/** Close code for a live view whose phone was removed from remote access. */
+export const DEVICE_REMOVED_CLOSE = 4401;
+
 export const BinaryKind = {
   /** Fragmented-MP4 initialization segment (ftyp + moov). */
   VideoInit: 1,

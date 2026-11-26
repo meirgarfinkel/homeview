@@ -1,14 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
-import { LIVE_WS_PATH } from '@kasa/shared';
+import { DEVICE_REMOVED_CLOSE, LIVE_WS_PATH } from '@kasa/shared';
 import type { LiveHub, Viewer } from '../media/liveHub.js';
 import type { DeviceStore } from '../remote/devices.js';
 import { clientIp } from '../security/remoteRequest.js';
 
 const PING_INTERVAL_MS = 20_000;
-
-/** Close code for a live view whose phone was removed from remote access. */
-export const DEVICE_REMOVED_CLOSE = 4401;
 
 /**
  * WebSocket endpoint that streams live video/audio to one browser tab. A

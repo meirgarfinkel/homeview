@@ -40,15 +40,18 @@ export function notifyUnauthorized(): void {
   unauthorizedHandler?.();
 }
 
+/** Routes whose 401 is an answer about the request, not a sign that the session ended. */
+const OWN_401 = new Set(['/api/login', '/api/session', '/api/remote/pair']);
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
     credentials: 'same-origin',
   });
-  // A 401 from sign-in only means a wrong password. A 401 from the session check is its own
-  // answer: re-checking the session in response would loop.
-  if (res.status === 401 && path !== '/api/login' && path !== '/api/session') notifyUnauthorized();
+  // A 401 from sign-in only means a wrong password, and one from pairing a bad code. A 401 from
+  // the session check is its own answer: re-checking the session in response would loop.
+  if (res.status === 401 && !OWN_401.has(path)) notifyUnauthorized();
   if (!res.ok) {
     let body: Partial<ApiError> = {};
     try {
