@@ -44,7 +44,7 @@ it('walks from password to the existing-camera form and connects', async () => {
     ),
   );
   render(<SetupWizard onDone={onDone} />);
-  expect(screen.getByRole('heading', { name: 'Welcome to Kasa Home' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Welcome to HomeView' })).toBeTruthy();
 
   await toExistingCamera(user);
   expect(calls('/api/setup/password')).toEqual([{ password: 'sleepy-owl-42' }]);

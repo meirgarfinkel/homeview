@@ -19,7 +19,7 @@ function Panel({ children }: { children: ReactNode }) {
   );
 }
 
-/** Which camera Kasa Home watches, its stream, and a way to change it. This computer only. */
+/** Which camera HomeView watches, its stream, and a way to change it. This computer only. */
 export function CameraSection({ camera, onChange }: { camera: Camera; onChange(): void }) {
   const [info, setInfo] = useState<CameraInfo>();
   useEffect(() => {

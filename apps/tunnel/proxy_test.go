@@ -52,10 +52,10 @@ func TestProxyKeepsHost(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	req := httptest.NewRequest("GET", "http://kasa-home.tail1234.ts.net/", nil)
+	req := httptest.NewRequest("GET", "http://homeview.tail1234.ts.net/", nil)
 	newProxy(mustURL(t, backend.URL), "s").ServeHTTP(httptest.NewRecorder(), req)
 
-	if gotHost != "kasa-home.tail1234.ts.net" {
+	if gotHost != "homeview.tail1234.ts.net" {
 		t.Errorf("Host = %q", gotHost)
 	}
 }

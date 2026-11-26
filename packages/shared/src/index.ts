@@ -249,7 +249,7 @@ export interface OnvifProfileInfo {
 export interface OnvifCheckResult {
   model?: string;
   profiles: OnvifProfileInfo[];
-  /** The profile Kasa Home would watch. */
+  /** The profile HomeView would watch. */
   picked: string;
 }
 

@@ -146,7 +146,7 @@ export function AwayFromHome() {
           )}
           {status.phase === 'approve' && (
             <>
-              <p>One more click: allow Kasa Home to share a web address.</p>
+              <p>One more click: allow HomeView to share a web address.</p>
               <button
                 className="btn btn-primary"
                 type="button"

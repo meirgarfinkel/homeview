@@ -45,7 +45,7 @@ export interface TunnelOptions {
   killAfterMs?: number;
 }
 
-const HOSTNAME = 'kasa-home';
+const HOSTNAME = 'homeview';
 const SECRET_ENV = 'KASA_TUNNEL_SECRET';
 const STOPPED = 'The connection helper stopped.';
 

@@ -66,7 +66,7 @@ export function Monitor({
   useWakeLock(isLive);
 
   useEffect(() => {
-    const name = camera?.alias ?? 'Kasa Home';
+    const name = camera?.alias ?? 'HomeView';
     document.title = soundActive ? `Sound — ${name}` : `${name} · Monitor`;
   }, [soundActive, camera?.alias]);
 
@@ -95,7 +95,7 @@ export function Monitor({
       if (!blob) return;
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `kasa-home-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+      a.download = `homeview-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }, 'image/png');
@@ -121,7 +121,7 @@ export function Monitor({
         <div className="brand">
           <span className="moon" aria-hidden="true" />
           <div>
-            <h1>{camera?.alias ?? 'Kasa Home'}</h1>
+            <h1>{camera?.alias ?? 'HomeView'}</h1>
             <p className="sub">
               {camera
                 ? `${camera.model} · ${camera.host}`

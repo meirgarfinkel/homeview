@@ -18,7 +18,7 @@ import { removeTempDir } from './tempDir.js';
  * the tunnel helper with --version, never with a secret.
  */
 export async function runSelfTest(staticDir: string, tunnel: string | undefined): Promise<number> {
-  const dir = mkdtempSync(path.join(tmpdir(), 'kasa-home-self-test-'));
+  const dir = mkdtempSync(path.join(tmpdir(), 'homeview-self-test-'));
   app.setPath('userData', dir);
   let server: RunningServer | undefined;
   try {
@@ -33,7 +33,7 @@ export async function runSelfTest(staticDir: string, tunnel: string | undefined)
       pino.destination({ dest: openLogFile(dir), sync: true }),
     );
     server = await startServer({
-      // PORT 0 takes any free port, so a running Kasa Home is left alone.
+      // PORT 0 takes any free port, so a running HomeView is left alone.
       env: { LOG_LEVEL: 'info', PORT: '0', HOST: '127.0.0.1' },
       settings: new SettingsStore(dir, safeStorageProtector()),
       dataDir: dir,

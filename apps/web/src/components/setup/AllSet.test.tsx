@@ -40,7 +40,7 @@ it('shows the QR code, the address and the certificate hint', () => {
   expect(screen.getByRole('img', { name: URL_ })).toBeTruthy();
   expect(
     screen.getByText(
-      "Phones show a security warning the first time. Tap Advanced, then Proceed. It's safe: Kasa Home makes its own certificate.",
+      "Phones show a security warning the first time. Tap Advanced, then Proceed. It's safe: HomeView makes its own certificate.",
     ),
   ).toBeTruthy();
 });
@@ -55,7 +55,7 @@ it('asks to connect to Wi-Fi, with no QR, when there is no address', () => {
 
 it('adds the firewall note on Windows only', () => {
   const note =
-    'If Windows asks whether to allow Kasa Home on networks, allow it on private networks.';
+    'If Windows asks whether to allow HomeView on networks, allow it on private networks.';
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
   );
@@ -69,13 +69,13 @@ it('adds the firewall note on Windows only', () => {
 
 it('hides the autostart box when the server cannot change it', () => {
   render(<AllSet lanUrl={URL_} autostart={null} onContinue={() => undefined} />);
-  expect(screen.queryByLabelText('Start Kasa Home when this computer starts')).toBeNull();
+  expect(screen.queryByLabelText('Start HomeView when this computer starts')).toBeNull();
 });
 
 it('saves the autostart choice', async () => {
   const user = userEvent.setup();
   render(<AllSet lanUrl={URL_} autostart={false} onContinue={() => undefined} />);
-  await user.click(screen.getByLabelText('Start Kasa Home when this computer starts'));
+  await user.click(screen.getByLabelText('Start HomeView when this computer starts'));
   const call = fetchMock.mock.calls.find(([p]) => p === '/api/app/autostart')!;
   expect(call[1]?.method).toBe('PUT');
   expect(JSON.parse(String(call[1]?.body))).toEqual({ enabled: true });
@@ -87,9 +87,7 @@ it('puts the box back and says so when saving fails', async () => {
     new Response(JSON.stringify({ error: 'not-available' }), { status: 404 }),
   );
   render(<AllSet lanUrl={URL_} autostart={false} onContinue={() => undefined} />);
-  const box = screen.getByLabelText(
-    'Start Kasa Home when this computer starts',
-  ) as HTMLInputElement;
+  const box = screen.getByLabelText('Start HomeView when this computer starts') as HTMLInputElement;
   await user.click(box);
   expect(await screen.findByRole('alert')).toBeTruthy();
   expect(box.checked).toBe(false);

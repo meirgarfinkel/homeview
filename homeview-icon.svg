@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <!-- homeView: the homePix roof and chimney over an upright dome camera, on a dark circle. homeview-icon.png and .ico are made from this. -->
+  <circle cx="32" cy="32" r="32" fill="#373530"/>
+  <g transform="translate(-3.84 -3.91) scale(1.12)">
+    <rect x="40" y="16.5" width="4" height="7.5" rx="0.8" fill="#FFFFFF"/>
+    <path d="M12 30.9L32 15.3L52 30.9" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(0 -6)">
+      <path d="M20.95 47A11.05 13 0 0 1 43.05 47" fill="none" stroke="#9FDDA0" stroke-width="2.2" stroke-linecap="round"/>
+      <rect x="19.95" y="47" width="24.1" height="5.5" rx="1" fill="none" stroke="#9FDDA0" stroke-width="2.2" stroke-linejoin="round"/>
+      <circle cx="32" cy="40.5" r="4.6" fill="none" stroke="#9FDDA0" stroke-width="2.2"/>
+      <circle cx="30.2" cy="38.8" r="1.3" fill="#FF7272"/>
+    </g>
+  </g>
+</svg>

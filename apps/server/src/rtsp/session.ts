@@ -13,7 +13,7 @@ export interface RtspResponse {
 
 const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_BODY_BYTES = 1024 * 1024;
-const USER_AGENT = 'Kasa Home';
+const USER_AGENT = 'HomeView';
 
 export function header(res: RtspResponse, name: string): string | undefined {
   return res.headers[name.toLowerCase()]?.[0];

@@ -65,7 +65,7 @@ export class RemoteAccess implements RemoteGateDeps {
 
   /** Saves the switch and starts or stops the helper. Turning on needs the helper. */
   async setEnabled(on: boolean): Promise<void> {
-    if (on && !this.available) throw new Error('Remote access needs the Kasa Home app');
+    if (on && !this.available) throw new Error('Remote access needs the HomeView app');
     this.devices.setEnabled(on);
     if (on) this.tunnel?.start();
     else await this.tunnel?.stop();

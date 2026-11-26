@@ -1,10 +1,10 @@
 import { chmodSync, closeSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-const LOG = 'kasa-home.log';
-const OLD_LOG = 'kasa-home.old.log';
+const LOG = 'homeview.log';
+const OLD_LOG = 'homeview.old.log';
 
-/** Move the log to kasa-home.old.log, replacing the one before, if it is over maxBytes. */
+/** Move the log to homeview.old.log, replacing the one before, if it is over maxBytes. */
 function rotateIfLarge(dir: string, maxBytes: number): boolean {
   const file = path.join(dir, LOG);
   try {

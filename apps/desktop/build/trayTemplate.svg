@@ -1,7 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none">
-  <g stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M2.6 11.2 12 3l9.4 8.2"/>
-    <path d="M5 9.6v11c4.7.1 9.3.1 14 0v-11"/>
-    <path d="M9.4 12.6h3.8c.5 0 .9.4.9.9v2.6c0 .5-.4.9-.9.9H9.4c-.5 0-.9-.4-.9-.9v-2.6c0-.5.4-.9.9-.9Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="10 10 44 44" fill="none">
+  <!-- HomeView in the Mac menu bar: the roof, chimney and dome camera in black; macOS recolours it. -->
+  <rect x="40" y="15.5" width="4.6" height="8.5" rx="0.8" fill="#000000"/>
+  <path d="M12 30.9L32 15.3L52 30.9" stroke="#000000" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(0 -6)" stroke="#000000" stroke-width="3.4">
+    <path d="M20.95 47A11.05 13 0 0 1 43.05 47" stroke-linecap="round"/>
+    <rect x="19.95" y="47" width="24.1" height="5.5" rx="1" stroke-linejoin="round"/>
+    <circle cx="32" cy="40.5" r="4.3"/>
   </g>
 </svg>

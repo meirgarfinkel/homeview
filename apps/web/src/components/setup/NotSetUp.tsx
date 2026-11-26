@@ -17,7 +17,7 @@ export function NotSetUp({ onSetUp }: { onSetUp(): void }) {
           return;
         }
       } catch {
-        // Kasa Home may be restarting; ask again later.
+        // HomeView may be restarting; ask again later.
       }
       if (!stopped) timer = setTimeout(() => void check(), CHECK_MS);
     };
@@ -32,8 +32,8 @@ export function NotSetUp({ onSetUp }: { onSetUp(): void }) {
     <div className="login">
       <div className="panel login-card">
         <span className="moon big" aria-hidden="true" />
-        <h1>Kasa Home</h1>
-        <p>Kasa Home isn&apos;t set up yet. Finish setup on the computer it&apos;s installed on.</p>
+        <h1>HomeView</h1>
+        <p>HomeView isn&apos;t set up yet. Finish setup on the computer it&apos;s installed on.</p>
       </div>
     </div>
   );

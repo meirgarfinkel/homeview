@@ -39,12 +39,11 @@ export function AllSet({
             <p className="address">{lanUrl}</p>
             <p className="hint">
               Phones show a security warning the first time. Tap Advanced, then Proceed. It&apos;s
-              safe: Kasa Home makes its own certificate.
+              safe: HomeView makes its own certificate.
             </p>
             {onWindows && (
               <p className="hint">
-                If Windows asks whether to allow Kasa Home on networks, allow it on private
-                networks.
+                If Windows asks whether to allow HomeView on networks, allow it on private networks.
               </p>
             )}
           </>

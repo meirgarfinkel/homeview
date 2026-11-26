@@ -13,23 +13,23 @@ describe('openLogFile', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it('rotates the log past the size limit', () => {
-    const current = path.join(dir, 'kasa-home.log');
+    const current = path.join(dir, 'homeview.log');
     writeFileSync(current, Buffer.alloc(6_000_000, 'a'));
 
     expect(openLogFile(dir, 5_000_000)).toBe(current);
 
-    expect(statSync(path.join(dir, 'kasa-home.old.log')).size).toBe(6_000_000);
+    expect(statSync(path.join(dir, 'homeview.old.log')).size).toBe(6_000_000);
     expect(statSync(current).size).toBe(0);
   });
 
   it('keeps appending to a log under the limit', () => {
-    const current = path.join(dir, 'kasa-home.log');
+    const current = path.join(dir, 'homeview.log');
     writeFileSync(current, 'earlier line\n');
 
     openLogFile(dir, 5_000_000);
 
     expect(readFileSync(current, 'utf8')).toBe('earlier line\n');
-    expect(existsSync(path.join(dir, 'kasa-home.old.log'))).toBe(false);
+    expect(existsSync(path.join(dir, 'homeview.old.log'))).toBe(false);
   });
 
   it('creates the folder and an owner-only log file', () => {
@@ -60,7 +60,7 @@ describe('keepLogSmall', () => {
       vi.advanceTimersByTime(60_000);
       dest.write('after the rotation\n');
 
-      expect(statSync(path.join(dir, 'kasa-home.old.log')).size).toBe(1501);
+      expect(statSync(path.join(dir, 'homeview.old.log')).size).toBe(1501);
       expect(readFileSync(file, 'utf8')).toBe('after the rotation\n');
       expect(statSync(file).mode & 0o777).toBe(0o600);
     } finally {
@@ -77,7 +77,7 @@ describe('keepLogSmall', () => {
       dest.write('short\n');
       vi.advanceTimersByTime(60_000);
       expect(readFileSync(file, 'utf8')).toBe('short\n');
-      expect(existsSync(path.join(dir, 'kasa-home.old.log'))).toBe(false);
+      expect(existsSync(path.join(dir, 'homeview.old.log'))).toBe(false);
     } finally {
       clearInterval(timer);
       dest.end();

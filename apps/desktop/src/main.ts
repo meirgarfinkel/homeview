@@ -14,8 +14,8 @@ import { runSelfTest } from './selfTest.js';
 import { createTray } from './tray.js';
 import { tunnelBinary } from './tunnelBinary.js';
 
-// Before anything reads userData, so settings land in a "Kasa Home" folder.
-app.setName('Kasa Home');
+// Before anything reads userData, so settings land in a "HomeView" folder.
+app.setName('HomeView');
 // There are no windows, so the GPU is never needed.
 app.disableHardwareAcceleration();
 
@@ -27,7 +27,7 @@ let started = false;
  * hold the single instance lock, so opening the app again would do nothing.
  */
 function fail(err: unknown): void {
-  const title = started ? 'Kasa Home stopped because of an error' : 'Kasa Home could not start';
+  const title = started ? 'HomeView stopped because of an error' : 'HomeView could not start';
   if (logger) logger.fatal({ err }, title);
   else console.error(`${title}:`, err);
   dialog.showErrorBox(title, err instanceof Error ? err.message : String(err));
@@ -85,8 +85,8 @@ async function run(): Promise<void> {
         () => server.stop(),
         5000,
         (err) => {
-          if (logger) logger.error({ err }, 'Could not stop Kasa Home cleanly');
-          else console.error('Could not stop Kasa Home cleanly:', err);
+          if (logger) logger.error({ err }, 'Could not stop HomeView cleanly');
+          else console.error('Could not stop HomeView cleanly:', err);
         },
       );
     }

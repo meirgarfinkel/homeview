@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiRequestError } from '../lib/api';
 
 const BAD_CODE =
-  "This code didn't work. It may have been used or expired. Make a new one in Kasa Home on your computer.";
+  "This code didn't work. It may have been used or expired. Make a new one in HomeView on your computer.";
 const TOO_MANY = 'Too many tries. Wait a few minutes and try again.';
-const UNREACHABLE = "Couldn't reach Kasa Home. Check the computer is on and try again.";
+const UNREACHABLE = "Couldn't reach HomeView. Check the computer is on and try again.";
 
 /** What to tell the phone when pairing failed. Only the server's bad-code answer blames the code. */
 function failureText(err: unknown): string {
@@ -48,7 +48,7 @@ export function Pair({ onPaired }: { onPaired(): void }) {
     <div className="login">
       <div className="panel login-card">
         <span className="moon big" aria-hidden="true" />
-        <h1>Kasa Home</h1>
+        <h1>HomeView</h1>
         {failure ? (
           <p className="error-text" role="alert">
             {failure}

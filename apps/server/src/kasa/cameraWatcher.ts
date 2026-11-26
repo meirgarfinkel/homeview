@@ -103,7 +103,7 @@ export class CameraWatcher {
     if (!this.fingerprint) {
       log.warn(
         'Camera seems to have moved, but its certificate was never recorded, so the new address ' +
-          "can't be verified. Restart Kasa Home to accept it.",
+          "can't be verified. Restart HomeView to accept it.",
       );
       return 'rejected';
     }
@@ -117,7 +117,7 @@ export class CameraWatcher {
     if (seen !== this.fingerprint) {
       log.warn(
         'A device claiming to be the camera has a different certificate; not switching. ' +
-          'If the camera was reset, restart Kasa Home.',
+          'If the camera was reset, restart HomeView.',
       );
       return 'rejected';
     }

@@ -11,7 +11,7 @@ const rateLimited = { error: 'rate_limited', message: 'Too many attempts. Try ag
 const badCode = {
   error: 'bad-code',
   message:
-    "This code didn't work. It may have been used or expired. Make a new one in Kasa Home on your computer.",
+    "This code didn't work. It may have been used or expired. Make a new one in HomeView on your computer.",
 };
 
 /**

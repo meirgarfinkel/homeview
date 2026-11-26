@@ -31,12 +31,12 @@ export interface TrayHandle {
 
 export function createTray(actions: TrayActions): TrayHandle {
   const tray = new Tray(trayIcon());
-  tray.setToolTip(`Kasa Home: ${actions.localUrl}`);
+  tray.setToolTip(`HomeView: ${actions.localUrl}`);
 
   const refresh = () =>
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Open Kasa Home', click: () => actions.open() },
+        { label: 'Open HomeView', click: () => actions.open() },
         {
           label: 'Start with this computer',
           type: 'checkbox',

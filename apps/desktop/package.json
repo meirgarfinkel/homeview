@@ -2,9 +2,9 @@
   "name": "@kasa/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Kasa Home: a LAN web viewer for Kasa cameras",
+  "description": "HomeView: a private camera viewer for your home",
   "author": "Meir Garfinkel",
-  "homepage": "https://github.com/meirgarfinkel/kasa-home",
+  "homepage": "https://github.com/meirgarfinkel/homeview",
   "type": "module",
   "main": "dist/main.mjs",
   "scripts": {

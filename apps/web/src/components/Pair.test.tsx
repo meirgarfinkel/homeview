@@ -16,9 +16,9 @@ afterEach(() => {
 });
 
 const BAD_CODE =
-  "This code didn't work. It may have been used or expired. Make a new one in Kasa Home on your computer.";
+  "This code didn't work. It may have been used or expired. Make a new one in HomeView on your computer.";
 const TOO_MANY = 'Too many tries. Wait a few minutes and try again.';
-const UNREACHABLE = "Couldn't reach Kasa Home. Check the computer is on and try again.";
+const UNREACHABLE = "Couldn't reach HomeView. Check the computer is on and try again.";
 
 const answer = (status: number, error: string) =>
   new Response(JSON.stringify({ error, message: 'x' }), { status });
@@ -55,13 +55,13 @@ it('asks to wait after too many tries', async () => {
   expect(screen.queryByText(BAD_CODE)).toBeNull();
 });
 
-it('says Kasa Home could not be reached when the server is starting', async () => {
+it('says HomeView could not be reached when the server is starting', async () => {
   fetchMock.mockResolvedValue(answer(503, 'remote-starting'));
   render(<Pair onPaired={() => undefined} />);
   expect(await screen.findByText(UNREACHABLE)).toBeTruthy();
 });
 
-it('says Kasa Home could not be reached when the network fails', async () => {
+it('says HomeView could not be reached when the network fails', async () => {
   fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
   render(<Pair onPaired={() => undefined} />);
   expect(await screen.findByText(UNREACHABLE)).toBeTruthy();

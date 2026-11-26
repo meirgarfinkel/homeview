@@ -10,7 +10,7 @@ import { PortsInUseError } from './server.js';
 /** One line for a server started with nothing set up yet. */
 export function notSetUpText(localUrl: string): string {
   return (
-    `Kasa Home is not set up yet. Open ${localUrl} on this computer to set it up, ` +
+    `HomeView is not set up yet. Open ${localUrl} on this computer to set it up, ` +
     'or set VIEWER_PASSWORD (and KASA_USERNAME and KASA_PASSWORD for the camera) in .env and restart.'
   );
 }

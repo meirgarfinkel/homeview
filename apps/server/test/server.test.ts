@@ -233,7 +233,7 @@ describe('a standard (ONVIF) camera', () => {
   });
 });
 
-describe('a standard camera that moved while Kasa Home was off', () => {
+describe('a standard camera that moved while HomeView was off', () => {
   it('is found by its id at start, and its new address is saved', async () => {
     const udp = dgram.createSocket('udp4');
     await new Promise<void>((r) => udp.bind(0, '127.0.0.1', () => r()));

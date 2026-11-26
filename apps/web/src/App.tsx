@@ -122,7 +122,7 @@ export function App({ retryMs = 500 }: { retryMs?: number } = {}) {
   if (error) {
     return (
       <div className="login">
-        <p className="error-text">Cannot reach the Kasa Home server: {error}</p>
+        <p className="error-text">Cannot reach the HomeView server: {error}</p>
       </div>
     );
   }

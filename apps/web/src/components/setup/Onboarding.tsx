@@ -6,7 +6,7 @@ import { TP_LINK_URL } from './CameraChoice';
 import { useHeadingFocus } from './useHeadingFocus';
 
 const POLL_MS = 1000;
-/** Failed polls in a row before the page says it can't reach Kasa Home. */
+/** Failed polls in a row before the page says it can't reach HomeView. */
 const QUIET_FAILURES = 4;
 const DEFAULT_ALIAS = 'nursery';
 
@@ -248,7 +248,7 @@ export function Onboarding({
   );
   const notice = unreachable && (
     <p className="error-text" role="status">
-      Could not reach Kasa Home. Still trying…
+      Could not reach HomeView. Still trying…
     </p>
   );
 

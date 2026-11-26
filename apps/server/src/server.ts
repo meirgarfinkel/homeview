@@ -238,7 +238,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         scheduleCameraRetry(config);
       }
     } else {
-      logger.info('Kasa Home is not set up yet');
+      logger.info('HomeView is not set up yet');
     }
 
     // Keep sessions valid across restarts without asking the user for a secret.
@@ -292,7 +292,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     const running = (port: number) => {
       logger.info(
         { ...(camera ? { camera: camera.host } : {}), url: lanUrl() ?? localUrlFor(port) },
-        'Kasa Home is running',
+        'HomeView is running',
       );
     };
     return {

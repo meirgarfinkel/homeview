@@ -49,12 +49,12 @@ const tooShort: ApiError = {
 
 const localOnly: ApiError = {
   error: 'local-only',
-  message: 'Only the computer running Kasa Home can do this.',
+  message: 'Only the computer running HomeView can do this.',
 };
 
 const notDesktop: ApiError = {
   error: 'not-available',
-  message: 'This is only available in the Kasa Home app.',
+  message: 'This is only available in the HomeView app.',
 };
 
 const passwordSchema = {
