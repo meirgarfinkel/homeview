@@ -1,3 +1,4 @@
+import { AppLogo } from './AppLogo';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiRequestError } from '../lib/api';
 
@@ -47,7 +48,7 @@ export function Pair({ onPaired }: { onPaired(): void }) {
   return (
     <div className="login">
       <div className="panel login-card">
-        <span className="moon big" aria-hidden="true" />
+        <AppLogo big />
         <h1>HomeView</h1>
         {failure ? (
           <p className="error-text" role="alert">

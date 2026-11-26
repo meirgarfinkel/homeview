@@ -1,3 +1,4 @@
+import { AppLogo } from './AppLogo';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StreamState } from '@kasa/shared';
 import { useLiveStream } from '../hooks/useLiveStream';
@@ -118,7 +119,7 @@ export function Monitor({
     <div className={`app${soundActive ? ' sound-active' : ''}`}>
       <header className="topbar">
         <div className="brand">
-          <span className="moon" aria-hidden="true" />
+          <AppLogo />
           <div>
             <h1>{camera?.alias ?? 'HomeView'}</h1>
             <p className="sub">

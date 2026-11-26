@@ -116,19 +116,15 @@ button {
   white-space: nowrap;
 }
 
-.moon {
-  width: 28px;
-  height: 28px;
+.logo {
+  width: 36px;
+  height: 36px;
   flex: none;
-  border-radius: 50%;
-  box-shadow: inset -8px -3px 0 0 var(--accent);
-  transform: rotate(-20deg);
 }
 
-.moon.big {
-  width: 44px;
-  height: 44px;
-  box-shadow: inset -12px -4px 0 0 var(--accent);
+.logo.big {
+  width: 56px;
+  height: 56px;
 }
 
 .layout {
@@ -552,7 +548,7 @@ input[type='text'] {
   gap: 16px;
 }
 
-.login-card .moon {
+.login-card .logo {
   align-self: center;
 }
 

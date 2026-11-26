@@ -46,3 +46,8 @@ it('does not save when the two passwords differ or are short', async () => {
   ).toBe(true);
   expect(screen.getByText('The two passwords do not match.')).toBeTruthy();
 });
+
+it('shows the HomeView icon on the sign-in card', () => {
+  const { container } = render(<Login local={false} onSuccess={() => undefined} />);
+  expect(container.querySelector('.login-card img.logo')).not.toBeNull();
+});

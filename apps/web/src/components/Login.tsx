@@ -1,3 +1,4 @@
+import { AppLogo } from './AppLogo';
 import { useState, type FormEvent } from 'react';
 import { api, ApiRequestError } from '../lib/api';
 import { errorText } from '../lib/errors';
@@ -32,7 +33,7 @@ function ResetPassword({ onSuccess, onBack }: { onSuccess(): void; onBack(): voi
   return (
     <div className="login">
       <form className="panel login-card" onSubmit={submit}>
-        <span className="moon big" aria-hidden="true" />
+        <AppLogo big />
         <h1>Set a new password</h1>
         <label className="field">
           <span>New password</span>
@@ -96,7 +97,7 @@ export function Login({ onSuccess, local = false }: { onSuccess(): void; local?:
   return (
     <div className="login">
       <form className="panel login-card" onSubmit={submit}>
-        <span className="moon big" aria-hidden="true" />
+        <AppLogo big />
         <h1>HomeView</h1>
         <label className="field">
           <span>Password</span>
