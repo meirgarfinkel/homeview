@@ -63,6 +63,7 @@ jobs:
       - run: pnpm --filter @kasa/desktop dist
 
       - name: Self-test the AppImage (Linux)
+        timeout-minutes: 10
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -77,26 +78,36 @@ jobs:
           grep -q 'SELF-TEST OK' self-test.log
 
       - name: Self-test the unpacked app (Windows)
+        timeout-minutes: 10
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           # Run the packaged executable, with output redirected because a
           # desktop app has no console of its own.
+          # Wait for the app itself, not with -Wait, which also waits for any
+          # child process that outlives it.
           $p = Start-Process -FilePath 'apps/desktop/release/win-unpacked/Kasa Home.exe' `
-            -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow `
+            -ArgumentList '--self-test' -PassThru -NoNewWindow `
             -RedirectStandardOutput self-test.log -RedirectStandardError self-test.err
+          $null = $p.Handle  # keeps ExitCode readable after exit
+          $done = $p.WaitForExit(120000)
           Get-Content self-test.log, self-test.err
+          if (-not $done) { $p.Kill($true); throw 'Self-test did not finish in 2 minutes' }
           if ($p.ExitCode -ne 0) { throw "Self-test exited with $($p.ExitCode)" }
           if (-not (Select-String -Path self-test.log -Pattern '^SELF-TEST OK' -Quiet)) { throw 'No SELF-TEST OK line' }
 
       - name: Self-test the universal app (macOS)
+        timeout-minutes: 10
         if: runner.os == 'macOS'
         shell: bash
         run: |
           app='apps/desktop/release/mac-universal/Kasa Home.app/Contents/MacOS/Kasa Home'
           "$app" --self-test | tee self-test-native.log
           grep -q '^SELF-TEST OK' self-test-native.log
-          # The same universal binary again as Intel, through Rosetta.
+          # The same universal binary again as Intel, through Rosetta. macOS
+          # treats that as another program and would ask, with a dialog nobody
+          # can answer here, to let it read the key the first run stored.
+          security delete-generic-password -s 'Kasa Home Safe Storage' >/dev/null 2>&1 || true
           if ! /usr/bin/pgrep -q oahd; then
             softwareupdate --install-rosetta --agree-to-license
           fi
