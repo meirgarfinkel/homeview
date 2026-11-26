@@ -18,6 +18,7 @@ import type {
   SettingsResponse,
   SetupExistingResult,
   StatusResponse,
+  UpdateStatus,
 } from '@kasa/shared';
 
 export class ApiRequestError extends Error {
@@ -73,7 +74,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  // A 202 may come with a body (onboarding, pairing) or without one (the update install).
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 const post = <T = void>(path: string, body: unknown = {}) =>
@@ -109,6 +112,8 @@ export const api = {
     post('/api/settings/camera-profile', { profileToken }),
   setAutostart: (enabled: boolean) => put('/api/app/autostart', { enabled }),
   quit: () => post('/api/app/quit'),
+  update: () => request<UpdateStatus>('/api/app/update'),
+  installUpdate: () => post('/api/app/update/install'),
   remote: {
     status: () => request<RemoteStatus>('/api/remote'),
     enable: (on: boolean) => post('/api/remote/enable', { on }),

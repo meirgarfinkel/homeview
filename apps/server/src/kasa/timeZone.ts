@@ -4,7 +4,7 @@ import type { LinkieClient } from './linkieClient.js';
 /**
  * The camera stamps the time on its video (when its OSD time is on) using a
  * fixed UTC offset such as "UTC+2:00", plus an `area` label. It doesn't
- * follow daylight saving by itself, so Kasa Home keeps it in step with the
+ * follow daylight saving by itself, so HomeView keeps it in step with the
  * time zone of the computer running it (or KASA_TIMEZONE), re-checking
  * regularly so DST changes are picked up.
  */

@@ -725,3 +725,18 @@ fieldset.field {
   text-align: center;
   pointer-events: none;
 }
+
+/* A downloaded update, ready to install: a strip above the page. */
+.update-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.update-bar > span {
+  flex: 1 1 auto;
+}

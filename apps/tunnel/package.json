@@ -2,7 +2,7 @@
   "name": "@kasa/tunnel",
   "version": "0.1.0",
   "private": true,
-  "description": "Helper that publishes Kasa Home through Tailscale Funnel.",
+  "description": "Helper that publishes HomeView through Tailscale Funnel.",
   "scripts": {
     "build": "node build.mjs",
     "test": "go test ./..."

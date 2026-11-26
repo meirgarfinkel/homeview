@@ -249,7 +249,7 @@ export interface OnvifProfileInfo {
 export interface OnvifCheckResult {
   model?: string;
   profiles: OnvifProfileInfo[];
-  /** The profile Kasa Home would watch. */
+  /** The profile HomeView would watch. */
   picked: string;
 }
 
@@ -267,3 +267,13 @@ export interface OnvifSaveResult {
 /** Error codes for the standard-camera checks. */
 export type OnvifCheckError =
   'bad-address' | 'camera-login' | 'video-format' | 'no-answer' | 'onvif-off';
+
+/** Where the desktop app's self-update stands. */
+export type UpdateStatus =
+  | { state: 'none' }
+  | { state: 'downloading'; version: string }
+  | { state: 'ready'; version: string }
+  | { state: 'error'; message: string };
+
+/** What an update check found. */
+export type UpdateCheckResult = 'up-to-date' | 'downloading' | 'ready' | 'not-installed';

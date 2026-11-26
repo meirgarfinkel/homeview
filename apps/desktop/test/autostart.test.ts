@@ -27,10 +27,10 @@ afterEach(() => {
 
 describe('linuxAutostartFile', () => {
   it('writes a Linux autostart entry that starts hidden', () => {
-    expect(linuxAutostartFile('/opt/Kasa Home/kasa-home')).toContain(
-      'Exec="/opt/Kasa Home/kasa-home" --hidden',
+    expect(linuxAutostartFile('/opt/HomeView/homeview')).toContain(
+      'Exec="/opt/HomeView/homeview" --hidden',
     );
-    expect(linuxAutostartFile('/x')).toContain('Name=Kasa Home');
+    expect(linuxAutostartFile('/x')).toContain('Name=HomeView');
   });
 
   it('escapes characters that are special inside a quoted Exec path', () => {
@@ -53,7 +53,7 @@ describe.runIf(process.platform === 'linux')('Linux autostart', () => {
   });
 
   it('adds and removes the entry in the autostart folder', () => {
-    const file = path.join(config, 'autostart', 'kasa-home.desktop');
+    const file = path.join(config, 'autostart', 'homeview.desktop');
     expect(getAutostart()).toBe(false);
 
     setAutostart(true);
@@ -74,10 +74,10 @@ describe('macOS autostart', () => {
   let home: string;
   const savedHome = process.env['HOME'];
   const plist = () =>
-    path.join(home, 'Library', 'LaunchAgents', 'io.github.meirgarfinkel.kasahome.plist');
+    path.join(home, 'Library', 'LaunchAgents', 'io.github.meirgarfinkel.homeview.plist');
 
   beforeEach(() => {
-    home = mkdtempSync(path.join(tmpdir(), 'kasa-home-'));
+    home = mkdtempSync(path.join(tmpdir(), 'homeview-'));
     process.env['HOME'] = home;
     onPlatform('darwin');
   });
@@ -92,7 +92,7 @@ describe('macOS autostart', () => {
     setAutostart(true);
     expect(getAutostart()).toBe(true);
     const text = readFileSync(plist(), 'utf8');
-    expect(text).toContain('<string>io.github.meirgarfinkel.kasahome</string>');
+    expect(text).toContain('<string>io.github.meirgarfinkel.homeview</string>');
     expect(text).toContain('<key>RunAtLoad</key>\n  <true/>');
     expect(text).toContain(`<string>${process.execPath}</string>\n    <string>--hidden</string>`);
 
@@ -104,8 +104,8 @@ describe('macOS autostart', () => {
   });
 
   it('escapes the app path for the plist', () => {
-    expect(macLaunchAgent('/Applications/A & B <x>.app/Contents/MacOS/Kasa Home')).toContain(
-      '<string>/Applications/A &amp; B &lt;x&gt;.app/Contents/MacOS/Kasa Home</string>',
+    expect(macLaunchAgent('/Applications/A & B <x>.app/Contents/MacOS/HomeView')).toContain(
+      '<string>/Applications/A &amp; B &lt;x&gt;.app/Contents/MacOS/HomeView</string>',
     );
   });
 });

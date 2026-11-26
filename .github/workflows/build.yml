@@ -33,18 +33,18 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact: Kasa-Home-Linux
+            artifact: HomeView-Linux
             files: |
-              apps/desktop/release/Kasa-Home-x86_64.AppImage
-              apps/desktop/release/kasa-home.deb
+              apps/desktop/release/HomeView-x86_64.AppImage
+              apps/desktop/release/HomeView.deb
           - os: windows-latest
-            artifact: Kasa-Home-Windows
+            artifact: HomeView-Windows
             files: |
-              apps/desktop/release/Kasa-Home-Setup.exe
+              apps/desktop/release/HomeViewSetup.exe
           - os: macos-latest
-            artifact: Kasa-Home-Mac
+            artifact: HomeView-Mac
             files: |
-              apps/desktop/release/Kasa-Home.dmg
+              apps/desktop/release/HomeView.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -69,10 +69,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb xauth
-          chmod +x apps/desktop/release/Kasa-Home-x86_64.AppImage
+          chmod +x apps/desktop/release/HomeView-x86_64.AppImage
           # Extract and run, because runners have no FUSE. No sandbox,
           # because runners block unprivileged user namespaces.
-          xvfb-run -a apps/desktop/release/Kasa-Home-x86_64.AppImage \
+          xvfb-run -a apps/desktop/release/HomeView-x86_64.AppImage \
             --appimage-extract-and-run --no-sandbox --self-test | tee self-test.log
           # The extracted file list can land on the same line, so no ^ anchor.
           grep -q 'SELF-TEST OK' self-test.log
@@ -86,7 +86,7 @@ jobs:
           # desktop app has no console of its own.
           # Wait for the app itself, not with -Wait, which also waits for any
           # child process that outlives it.
-          $p = Start-Process -FilePath 'apps/desktop/release/win-unpacked/Kasa Home.exe' `
+          $p = Start-Process -FilePath 'apps/desktop/release/win-unpacked/HomeView.exe' `
             -ArgumentList '--self-test' -PassThru -NoNewWindow `
             -RedirectStandardOutput self-test.log -RedirectStandardError self-test.err
           $null = $p.Handle  # keeps ExitCode readable after exit
@@ -101,13 +101,13 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          app='apps/desktop/release/mac-universal/Kasa Home.app/Contents/MacOS/Kasa Home'
+          app='apps/desktop/release/mac-universal/HomeView.app/Contents/MacOS/HomeView'
           "$app" --self-test | tee self-test-native.log
           grep -q '^SELF-TEST OK' self-test-native.log
           # The same universal binary again as Intel, through Rosetta. macOS
           # treats that as another program and would ask, with a dialog nobody
           # can answer here, to let it read the key the first run stored.
-          security delete-generic-password -s 'Kasa Home Safe Storage' >/dev/null 2>&1 || true
+          security delete-generic-password -s 'HomeView Safe Storage' >/dev/null 2>&1 || true
           if ! /usr/bin/pgrep -q oahd; then
             softwareupdate --install-rosetta --agree-to-license
           fi
@@ -145,8 +145,8 @@ jobs:
         run: |
           ls -l dist
           gh release create "${GITHUB_REF_NAME}" \
-            dist/Kasa-Home-x86_64.AppImage \
-            dist/kasa-home.deb \
-            dist/Kasa-Home-Setup.exe \
-            dist/Kasa-Home.dmg \
-            --title "Kasa Home ${GITHUB_REF_NAME}" --generate-notes
+            dist/HomeView-x86_64.AppImage \
+            dist/HomeView.deb \
+            dist/HomeViewSetup.exe \
+            dist/HomeView.dmg \
+            --title "HomeView ${GITHUB_REF_NAME}" --generate-notes

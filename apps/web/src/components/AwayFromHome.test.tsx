@@ -19,7 +19,11 @@ beforeEach(() => {
     if (path === '/api/remote' && !init?.method) return Promise.resolve(json(status));
     if (path === '/api/remote/pair-code')
       return Promise.resolve(
-        json({ url: 'https://kasa-home.ts.net/pair#abc', expiresAt: '2026-11-26T12:00:00Z' }),
+        json({
+          url: 'https://homeview.ts.net/pair#abc',
+          // Five minutes after "now", real or faked: a fixed time expires once the day passes it.
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        }),
       );
     return Promise.resolve(new Response(null, { status: 204 }));
   });
@@ -56,7 +60,7 @@ it('shows each step of turning on', async () => {
   ).toBeTruthy();
   cleanup();
   await show({ phase: 'approve' });
-  expect(screen.getByText('One more click: allow Kasa Home to share a web address.')).toBeTruthy();
+  expect(screen.getByText('One more click: allow HomeView to share a web address.')).toBeTruthy();
   cleanup();
   await show({ phase: 'problem', message: 'The helper stopped.' });
   expect(screen.getByText('The helper stopped.')).toBeTruthy();
@@ -83,17 +87,17 @@ it('opens the browser from Sign in and Approve', async () => {
 it('shows the address and lists devices when on', async () => {
   await show({
     phase: 'on',
-    url: 'https://kasa-home.ts.net',
+    url: 'https://homeview.ts.net',
     devices: [{ id: 'd1', name: 'iPhone', createdAt: '2026-11-20T10:00:00Z' }],
   });
-  expect(screen.getByText('https://kasa-home.ts.net')).toBeTruthy();
+  expect(screen.getByText('https://homeview.ts.net')).toBeTruthy();
   expect(screen.getByText(/^iPhone, added .+, used never$/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Sign out of Tailscale' })).toBeTruthy();
 });
 
 it('shows a QR code for the pairing address', async () => {
   const user = userEvent.setup();
-  await show({ phase: 'on', url: 'https://kasa-home.ts.net' });
+  await show({ phase: 'on', url: 'https://homeview.ts.net' });
   await user.click(screen.getByRole('button', { name: 'Add a phone' }));
   expect(
     await screen.findByText(
@@ -108,7 +112,7 @@ it('removes a device', async () => {
   const user = userEvent.setup();
   await show({
     phase: 'on',
-    url: 'https://kasa-home.ts.net',
+    url: 'https://homeview.ts.net',
     devices: [{ id: 'd1', name: 'iPhone', createdAt: '2026-11-20T10:00:00Z' }],
   });
   await user.click(screen.getByRole('button', { name: 'Remove iPhone' }));
@@ -138,13 +142,13 @@ it('signs out of Tailscale once the user agrees', async () => {
 it('stays signed in when the user says no', async () => {
   const user = userEvent.setup();
   vi.stubGlobal('confirm', () => false);
-  await show({ phase: 'on', url: 'https://kasa-home.ts.net' });
+  await show({ phase: 'on', url: 'https://homeview.ts.net' });
   await user.click(screen.getByRole('button', { name: 'Sign out of Tailscale' }));
   expect(calls('/api/remote/sign-out', 'POST')).toHaveLength(0);
 });
 
 it('warns that the address can take a few minutes the first time', async () => {
-  await show({ phase: 'on', url: 'https://kasa-home.ts.net' });
+  await show({ phase: 'on', url: 'https://homeview.ts.net' });
   expect(
     screen.getByText('The first time, the address can take a few minutes to start working.'),
   ).toBeTruthy();
@@ -168,7 +172,7 @@ it('polls every 2 seconds while starting, and stops on unmount', async () => {
 
 it('polls every 5 seconds once on', async () => {
   vi.useFakeTimers();
-  status = { ...base, phase: 'on', url: 'https://kasa-home.ts.net' };
+  status = { ...base, phase: 'on', url: 'https://homeview.ts.net' };
   render(<AwayFromHome />);
   await act(() => vi.advanceTimersByTimeAsync(0));
   const first = calls('/api/remote').length;
@@ -186,9 +190,9 @@ const iPhone = { id: 'd1', name: 'iPhone', createdAt: '2026-11-20T10:00:00Z' };
 /** Shows the section while on, with fake timers, and opens a pairing code. */
 const showCode = async () => {
   vi.useFakeTimers();
-  // The fake pairing code expires at 12:00.
+  // The fake pairing code expires five minutes after this, at 12:00.
   vi.setSystemTime(new Date('2026-11-26T11:55:00Z'));
-  status = { ...base, phase: 'on', url: 'https://kasa-home.ts.net', devices: [iPhone] };
+  status = { ...base, phase: 'on', url: 'https://homeview.ts.net', devices: [iPhone] };
   render(<AwayFromHome />);
   await act(() => vi.advanceTimersByTimeAsync(0));
   fireEvent.click(screen.getByRole('button', { name: 'Add a phone' }));

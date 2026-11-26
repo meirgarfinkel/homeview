@@ -166,7 +166,7 @@ function orThrow(s: OnboardingStatus): OnboardingStatus {
 async function main(): Promise<void> {
   say('Kasa camera setup, without the phone app\n');
   say('This puts a new or factory-reset camera on your Wi-Fi. During setup this');
-  say('computer briefly leaves your home Wi-Fi, so the Kasa Home page goes offline.');
+  say('computer briefly leaves your home Wi-Fi, so the HomeView page goes offline.');
 
   const acct = account();
   say('\nStep 1: how should the camera be set up?');
@@ -241,7 +241,7 @@ async function main(): Promise<void> {
 
   const camera = saved!;
   const envPath = process.env['ENV_FILE'] ?? path.join(findRepoRoot() ?? process.cwd(), '.env');
-  // Kasa Home finds the camera by itself and follows it if its address
+  // HomeView finds the camera by itself and follows it if its address
   // changes, so no address is saved. An old pinned KASA_HOST is cleared.
   const values: Record<string, string> = {};
   if (process.env['KASA_HOST']) values['KASA_HOST'] = '';
@@ -261,7 +261,7 @@ async function main(): Promise<void> {
       say('Saved.');
     }
   }
-  say('\nDone. Restart Kasa Home so it picks up the camera (it finds it automatically).');
+  say('\nDone. Restart HomeView so it picks up the camera (it finds it automatically).');
 }
 
 /** Stop the job; cancel() only switches back by itself with nmcli. */

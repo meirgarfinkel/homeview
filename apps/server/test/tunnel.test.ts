@@ -18,7 +18,7 @@ import { silentLogger, waitFor } from './helpers.js';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fakeTunnel.mjs', import.meta.url));
 const PARENT = fileURLToPath(new URL('./fixtures/tunnelParent.ts', import.meta.url));
-const READY = { event: { type: 'ready', url: 'https://kasa-home.example.ts.net' } };
+const READY = { event: { type: 'ready', url: 'https://homeview.example.ts.net' } };
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -97,8 +97,8 @@ describe('TunnelManager', () => {
     await waitFor(() => tunnel.phase() === 'approve');
     expect(tunnel.link()).toBe('https://login.tailscale.com/f/funnel?node=n1');
     await waitFor(() => tunnel.phase() === 'on');
-    expect(tunnel.url()).toBe('https://kasa-home.example.ts.net');
-    expect(tunnel.host()).toBe('kasa-home.example.ts.net');
+    expect(tunnel.url()).toBe('https://homeview.example.ts.net');
+    expect(tunnel.host()).toBe('homeview.example.ts.net');
     expect(tunnel.link()).toBeUndefined();
     expect(phases).toEqual(['starting', 'sign-in', 'approve', 'on']);
   });
@@ -113,7 +113,7 @@ describe('TunnelManager', () => {
     ]);
     tunnel.start();
     await waitFor(() => tunnel.phase() === 'on');
-    expect(tunnel.host()).toBe('kasa-home.example.ts.net');
+    expect(tunnel.host()).toBe('homeview.example.ts.net');
   });
 
   it('restarts after the helper exits, then reports the problem', async () => {
@@ -202,7 +202,7 @@ describe('TunnelManager', () => {
       '--target',
       '127.0.0.1:4321',
       '--hostname',
-      'kasa-home',
+      'homeview',
     ]);
   });
 

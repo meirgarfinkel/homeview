@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, dialog, shell } from 'electron';
+import { app, dialog, Notification, shell } from 'electron';
 import { pino } from 'pino';
 import { loggerOptions, type Logger } from '../../server/src/logger.js';
 import { ensureDataDir } from '../../server/src/security/dataDir.js';
@@ -13,9 +13,14 @@ import { safeStorageProtector } from './protector.js';
 import { runSelfTest } from './selfTest.js';
 import { createTray } from './tray.js';
 import { tunnelBinary } from './tunnelBinary.js';
+import { defaultRunner, MOVE_FIRST, macBundle, macCanUpdate } from './updates/install.js';
+import { howInstalled } from './updates/release.js';
+import { checkFromTray, Updater } from './updates/updater.js';
 
-// Before anything reads userData, so settings land in a "Kasa Home" folder.
-app.setName('Kasa Home');
+// Before anything reads userData, so settings land in a "HomeView" folder.
+app.setName('HomeView');
+// Windows shows notifications only for the ID the installer gave the Start menu shortcut.
+if (process.platform === 'win32') app.setAppUserModelId('io.github.meirgarfinkel.homeview');
 // There are no windows, so the GPU is never needed.
 app.disableHardwareAcceleration();
 
@@ -27,7 +32,7 @@ let started = false;
  * hold the single instance lock, so opening the app again would do nothing.
  */
 function fail(err: unknown): void {
-  const title = started ? 'Kasa Home stopped because of an error' : 'Kasa Home could not start';
+  const title = started ? 'HomeView stopped because of an error' : 'HomeView could not start';
   if (logger) logger.fatal({ err }, title);
   else console.error(`${title}:`, err);
   dialog.showErrorBox(title, err instanceof Error ? err.message : String(err));
@@ -69,6 +74,7 @@ async function run(): Promise<void> {
   // The tray comes after the server, which needs to tell it about changes.
   let refreshTray = () => {};
   let stopped = false;
+  let stopUpdates = () => {};
   const open = () => {
     if (running.server) void shell.openExternal(running.server.localUrl);
   };
@@ -79,14 +85,15 @@ async function run(): Promise<void> {
   const quit = async () => {
     if (stopped) return;
     stopped = true;
+    stopUpdates();
     const server = running.server;
     if (server) {
       await stopWithin(
         () => server.stop(),
         5000,
         (err) => {
-          if (logger) logger.error({ err }, 'Could not stop Kasa Home cleanly');
-          else console.error('Could not stop Kasa Home cleanly:', err);
+          if (logger) logger.error({ err }, 'Could not stop HomeView cleanly');
+          else console.error('Could not stop HomeView cleanly:', err);
         },
       );
     }
@@ -110,6 +117,38 @@ async function run(): Promise<void> {
 
   const helper = helperPath();
   if (!helper) log.warn('The tunnel helper is missing, so remote access is not available');
+  const kind = howInstalled({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    execPath: process.execPath,
+    ...(process.env['APPIMAGE'] ? { appImage: process.env['APPIMAGE'] } : {}),
+  });
+  const paths = {
+    execPath: process.execPath,
+    ...(process.env['APPIMAGE'] ? { appImage: process.env['APPIMAGE'] } : {}),
+  };
+  // A copy run from source never updates itself, so it gets no update hooks or tray item.
+  const updater = kind
+    ? new Updater({
+        kind,
+        current: app.getVersion(),
+        dir: path.join(userData, 'updates'),
+        runner: { ...defaultRunner, openPath: (p) => void shell.openPath(p) },
+        paths,
+        quit: () => void quit(),
+        ...(kind === 'mac' && !macCanUpdate(macBundle(process.execPath))
+          ? { blocked: () => MOVE_FIRST }
+          : {}),
+        logger: {
+          info: (m) => log.info(m),
+          warn: (m) => log.warn(m),
+          error: (m) => log.error(m),
+        },
+      })
+    : undefined;
+  const notify = (body: string) => new Notification({ title: 'HomeView', body }).show();
+  let checkingUpdates = false;
+
   const server = await startServer({
     // Only these values: .env and the shell never change the installed app.
     env: { LOG_LEVEL: 'info' },
@@ -123,6 +162,13 @@ async function run(): Promise<void> {
         refreshTray();
       },
       quit: () => void quit(),
+      ...(updater
+        ? {
+            updateStatus: () => updater.status(),
+            installUpdate: () => void updater.install(),
+            checkForUpdates: () => updater.check(),
+          }
+        : {}),
     },
     desktop: true,
     logger: log,
@@ -138,8 +184,22 @@ async function run(): Promise<void> {
     setAutostart,
     showLogs: () => void shell.openPath(logFile),
     quit: () => void quit(),
+    ...(updater
+      ? {
+          checkingUpdates: () => checkingUpdates,
+          checkForUpdates: () =>
+            void checkFromTray(updater, notify, (on) => {
+              checkingUpdates = on;
+              refreshTray();
+            }),
+        }
+      : {}),
   });
   refreshTray = tray.refresh;
+  if (updater) {
+    updater.start();
+    stopUpdates = () => updater.stop();
+  }
   started = true;
 
   // A start at login stays in the tray.

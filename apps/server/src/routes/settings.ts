@@ -49,12 +49,12 @@ const tooShort: ApiError = {
 
 const localOnly: ApiError = {
   error: 'local-only',
-  message: 'Only the computer running Kasa Home can do this.',
+  message: 'Only the computer running HomeView can do this.',
 };
 
 const notDesktop: ApiError = {
   error: 'not-available',
-  message: 'This is only available in the Kasa Home app.',
+  message: 'This is only available in the HomeView app.',
 };
 
 const passwordSchema = {
@@ -222,6 +222,22 @@ export async function registerSettingsRoutes(
       return reply.code(204).send();
     },
   );
+
+  app.get('/api/app/update', async (req, reply) => {
+    if (!appOnly(req, reply, hooks?.updateStatus)) return reply;
+    return hooks!.updateStatus!();
+  });
+
+  app.post('/api/app/update/install', async (req, reply) => {
+    if (!appOnly(req, reply, hooks?.installUpdate)) return reply;
+    reply.raw.once('close', () => hooks!.installUpdate!());
+    return reply.code(202).send();
+  });
+
+  app.post('/api/app/update/check', async (req, reply) => {
+    if (!appOnly(req, reply, hooks?.checkForUpdates)) return reply;
+    return { result: await hooks!.checkForUpdates!() };
+  });
 
   app.post('/api/app/quit', async (req, reply) => {
     if (!appOnly(req, reply, hooks?.quit)) return reply;

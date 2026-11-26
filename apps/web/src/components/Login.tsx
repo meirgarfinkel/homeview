@@ -97,7 +97,7 @@ export function Login({ onSuccess, local = false }: { onSuccess(): void; local?:
     <div className="login">
       <form className="panel login-card" onSubmit={submit}>
         <span className="moon big" aria-hidden="true" />
-        <h1>Kasa Home</h1>
+        <h1>HomeView</h1>
         <label className="field">
           <span>Password</span>
           <input

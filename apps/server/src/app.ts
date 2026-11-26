@@ -4,6 +4,7 @@ import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import type { UpdateCheckResult, UpdateStatus } from '@kasa/shared';
 import { viewerCheck, type Config } from './config.js';
 import type { CameraDriver } from './camera/driver.js';
 import type { LiveHub } from './media/liveHub.js';
@@ -57,6 +58,12 @@ export interface ServerHooks {
   quit?(): void;
   /** Opens a link in the system browser. */
   openExternal?(url: string): void;
+  /** Where the app's self-update stands. */
+  updateStatus?(): UpdateStatus;
+  /** Install the downloaded update and restart into it. */
+  installUpdate?(): void;
+  /** Look for a newer release now. */
+  checkForUpdates?(): Promise<UpdateCheckResult>;
 }
 
 export interface AppDeps {
@@ -116,7 +123,7 @@ const SETUP_API = /^\/api\/setup(\/|$)/;
 
 const localOnly = {
   error: 'local-only',
-  message: 'Only the computer running Kasa Home can do this.',
+  message: 'Only the computer running HomeView can do this.',
 };
 
 /** Routes that talk to the camera or its stream. */
@@ -133,13 +140,13 @@ const REMOTE_FORBIDDEN_API = /^\/api\/(setup|settings|app|remote)(\/|$)/;
 
 const remoteLocalOnly = {
   error: 'local-only',
-  message: "This can't be done from away. Use Kasa Home at home.",
+  message: "This can't be done from away. Use HomeView at home.",
 };
 
 const deviceNotPaired = {
   error: 'device-not-paired',
   message:
-    "This phone isn't set up to watch from away. At home, scan the code in Kasa Home on your computer.",
+    "This phone isn't set up to watch from away. At home, scan the code in HomeView on your computer.",
 };
 
 const forbidden = { error: 'forbidden', message: 'Forbidden' };
@@ -263,7 +270,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const url = checkedPath(req);
     // The socket's address, never a header: trustProxy is off.
     if (url.startsWith('/api/') && !isLocalRequest(req)) {
-      // Nobody else may use Kasa Home until this computer has chosen a password.
+      // Nobody else may use HomeView until this computer has chosen a password.
       if (!config.setupComplete && !BEFORE_SETUP_API.has(url)) {
         return reply.code(403).send(notSetUp);
       }

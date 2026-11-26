@@ -226,13 +226,13 @@ it('keeps polling through failed polls and only complains after several', async 
   await renderLocal();
   await tick();
   await tick();
-  expect(screen.queryByText(/Could not reach Kasa Home/)).toBeNull();
+  expect(screen.queryByText(/Could not reach HomeView/)).toBeNull();
   await tick(4000);
-  expect(screen.getByText(/Could not reach Kasa Home/)).toBeTruthy();
+  expect(screen.getByText(/Could not reach HomeView/)).toBeTruthy();
 
   polls = [status({ phase: 'scanning' })];
   await tick();
-  expect(screen.queryByText(/Could not reach Kasa Home/)).toBeNull();
+  expect(screen.queryByText(/Could not reach HomeView/)).toBeNull();
   expect(
     screen.getByRole('heading', { name: 'Asking the camera which networks it can see…' }),
   ).toBeTruthy();

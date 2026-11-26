@@ -9,6 +9,10 @@ export interface TrayActions {
   setAutostart(on: boolean): void;
   showLogs(): void;
   quit(): void;
+  /** Missing when this copy can't update itself (run from source). */
+  checkForUpdates?(): void;
+  /** True while a check from the tray runs. */
+  checkingUpdates?(): boolean;
 }
 
 /** The images tsup copies to dist/tray, next to the bundled main.mjs. */
@@ -31,12 +35,12 @@ export interface TrayHandle {
 
 export function createTray(actions: TrayActions): TrayHandle {
   const tray = new Tray(trayIcon());
-  tray.setToolTip(`Kasa Home: ${actions.localUrl}`);
+  tray.setToolTip(`HomeView: ${actions.localUrl}`);
 
   const refresh = () =>
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Open Kasa Home', click: () => actions.open() },
+        { label: 'Open HomeView', click: () => actions.open() },
         {
           label: 'Start with this computer',
           type: 'checkbox',
@@ -46,6 +50,13 @@ export function createTray(actions: TrayActions): TrayHandle {
             refresh();
           },
         },
+        ...(actions.checkForUpdates
+          ? [
+              actions.checkingUpdates?.()
+                ? { label: 'Checking for updates…', enabled: false }
+                : { label: 'Check for updates', click: () => actions.checkForUpdates!() },
+            ]
+          : []),
         { label: 'Show logs', click: () => actions.showLogs() },
         { type: 'separator' },
         { label: 'Quit', click: () => actions.quit() },

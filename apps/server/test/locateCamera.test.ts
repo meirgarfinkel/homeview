@@ -17,7 +17,7 @@ function newFake(alias: string): FakeCamera {
 let one: FakeCamera;
 let discoveryPort: number;
 beforeAll(async () => {
-  // Renamed in the Kasa app after Kasa Home saved "nursery".
+  // Renamed in the Kasa app after HomeView saved "nursery".
   one = newFake('Baby room');
   discoveryPort = (await one.start('127.0.0.1', 0, 0, 0)).discoveryPort!;
 });

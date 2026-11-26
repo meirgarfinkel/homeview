@@ -22,7 +22,7 @@ export function AutostartBox({ initial }: { initial: boolean }) {
     <>
       <label className="check">
         <input type="checkbox" checked={enabled} onChange={(e) => void change(e.target.checked)} />
-        <span>Start Kasa Home when this computer starts</span>
+        <span>Start HomeView when this computer starts</span>
       </label>
       {error && (
         <p className="error-text" role="alert">

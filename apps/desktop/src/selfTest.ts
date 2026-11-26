@@ -10,6 +10,7 @@ import { SettingsStore } from '../../server/src/settings/store.js';
 import { openLogFile } from './logs.js';
 import { safeStorageProtector } from './protector.js';
 import { removeTempDir } from './tempDir.js';
+import { retryFetch } from './retryFetch.js';
 
 /**
  * Check that the built app can run the server: start it on a fresh data
@@ -18,7 +19,7 @@ import { removeTempDir } from './tempDir.js';
  * the tunnel helper with --version, never with a secret.
  */
 export async function runSelfTest(staticDir: string, tunnel: string | undefined): Promise<number> {
-  const dir = mkdtempSync(path.join(tmpdir(), 'kasa-home-self-test-'));
+  const dir = mkdtempSync(path.join(tmpdir(), 'homeview-self-test-'));
   app.setPath('userData', dir);
   let server: RunningServer | undefined;
   try {
@@ -33,7 +34,7 @@ export async function runSelfTest(staticDir: string, tunnel: string | undefined)
       pino.destination({ dest: openLogFile(dir), sync: true }),
     );
     server = await startServer({
-      // PORT 0 takes any free port, so a running Kasa Home is left alone.
+      // PORT 0 takes any free port, so a running HomeView is left alone.
       env: { LOG_LEVEL: 'info', PORT: '0', HOST: '127.0.0.1' },
       settings: new SettingsStore(dir, safeStorageProtector()),
       dataDir: dir,
@@ -42,15 +43,15 @@ export async function runSelfTest(staticDir: string, tunnel: string | undefined)
       desktop: true,
     });
 
-    const health = await fetch(`${server.localUrl}/api/health`);
+    const health = await retryFetch(`${server.localUrl}/api/health`);
     if (health.status !== 200) throw new Error(`/api/health answered ${health.status}`);
-    const session = (await (await fetch(`${server.localUrl}/api/session`)).json()) as {
+    const session = (await (await retryFetch(`${server.localUrl}/api/session`)).json()) as {
       setupComplete?: unknown;
     };
     if (session.setupComplete !== false) {
       throw new Error(`/api/session gave setupComplete ${String(session.setupComplete)}`);
     }
-    const page = await fetch(`${server.localUrl}/`);
+    const page = await retryFetch(`${server.localUrl}/`);
     if (page.status !== 200) throw new Error(`The web page answered ${page.status}`);
 
     console.log('SELF-TEST OK');

@@ -1,9 +1,9 @@
 {
-  "name": "kasa-home",
+  "name": "homeview",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Watch a TP-Link Kasa camera from any browser on your local network. No cloud.",
+  "description": "HomeView: watch your home camera from any screen at home, and from away. No cloud.",
   "packageManager": "pnpm@10.12.1",
   "engines": {
     "node": ">=22.12"

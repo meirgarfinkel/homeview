@@ -33,7 +33,7 @@ interface ApiDeps extends AppDeps {
 
 export const notSetUp: ApiError = {
   error: 'not-set-up',
-  message: "Kasa Home isn't set up yet. Finish setup on the computer running it.",
+  message: "HomeView isn't set up yet. Finish setup on the computer running it.",
 };
 
 function sendError(reply: FastifyReply, err: unknown): FastifyReply {

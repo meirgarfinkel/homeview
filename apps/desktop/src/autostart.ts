@@ -12,7 +12,7 @@ export function linuxAutostartFile(execPath: string): string {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=Kasa Home',
+    'Name=HomeView',
     'Comment=Watch your Kasa camera from any browser at home',
     `Exec=${quoted} ${HIDDEN}`,
     'Terminal=false',
@@ -23,10 +23,10 @@ export function linuxAutostartFile(execPath: string): string {
 
 function linuxAutostartPath(): string {
   const config = process.env['XDG_CONFIG_HOME'] || path.join(os.homedir(), '.config');
-  return path.join(config, 'autostart', 'kasa-home.desktop');
+  return path.join(config, 'autostart', 'homeview.desktop');
 }
 
-const LAUNCH_AGENT_LABEL = 'io.github.meirgarfinkel.kasahome';
+const LAUNCH_AGENT_LABEL = 'io.github.meirgarfinkel.homeview';
 
 const xml = (text: string) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

@@ -9,7 +9,7 @@ import type * as ConfigModule from '../../src/config.js';
  * does. Without this the tests would serve static files only when someone
  * had run the web build, and bugs that need them would hide.
  */
-export const TEST_PAGE_MARKER = 'kasa-home-test-page';
+export const TEST_PAGE_MARKER = 'homeview-test-page';
 
 const root = mkdtempSync(path.join(tmpdir(), 'kasa-static-'));
 mkdirSync(path.join(root, 'assets'));

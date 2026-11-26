@@ -1,4 +1,4 @@
-// Command kasa-tunnel publishes a local Kasa Home server through Tailscale
+// Command kasa-tunnel publishes a local HomeView server through Tailscale
 // Funnel. It talks to its parent over JSON lines on stdout.
 package main
 
@@ -31,7 +31,7 @@ const (
 	exitFatal       = 1
 	funnelListen    = ":443"
 	secretEnvVar    = "KASA_TUNNEL_SECRET"
-	defaultHostname = "kasa-home"
+	defaultHostname = "homeview"
 )
 
 func main() {

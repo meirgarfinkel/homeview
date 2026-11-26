@@ -1,4 +1,4 @@
-/** The ONVIF calls Kasa Home uses: device info, media profiles, stream address and PTZ. */
+/** The ONVIF calls HomeView uses: device info, media profiles, stream address and PTZ. */
 import type { Logger } from '../logger.js';
 import { rewriteStreamHost } from './pickProfile.js';
 import { OnvifFaultError, SoapClient } from './soap.js';

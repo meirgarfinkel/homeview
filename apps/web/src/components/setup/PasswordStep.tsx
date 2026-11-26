@@ -33,7 +33,7 @@ export function PasswordStep({ onNext }: { onNext(): void }) {
       <form className="panel login-card" onSubmit={submit}>
         <span className="moon big" aria-hidden="true" />
         <h1 ref={heading} tabIndex={-1}>
-          Welcome to Kasa Home
+          Welcome to HomeView
         </h1>
         <p>
           Choose a password. Everyone who watches the camera will type it, on any phone or computer.

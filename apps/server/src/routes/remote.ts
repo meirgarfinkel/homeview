@@ -18,22 +18,22 @@ export interface RemoteRouteDeps {
 
 const localOnly: ApiError = {
   error: 'local-only',
-  message: 'Only the computer running Kasa Home can do this.',
+  message: 'Only the computer running HomeView can do this.',
 };
 
 const notAvailable: ApiError = {
   error: 'not-available',
-  message: 'This is only available in the Kasa Home app.',
+  message: 'This is only available in the HomeView app.',
 };
 
 const needsPassword: ApiError = {
   error: 'needs-password',
-  message: 'Set up Kasa Home and choose a password first.',
+  message: 'Set up HomeView and choose a password first.',
 };
 
 const remoteOff: ApiError = {
   error: 'remote-off',
-  message: 'Away from home is off. Turn it on in Kasa Home on your computer.',
+  message: 'Away from home is off. Turn it on in HomeView on your computer.',
 };
 
 const noLink: ApiError = {

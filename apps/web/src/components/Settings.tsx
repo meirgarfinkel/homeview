@@ -204,12 +204,12 @@ function StopSection() {
   };
 
   return (
-    <Section title="Stop Kasa Home">
+    <Section title="Stop HomeView">
       {stopped ? (
-        <p role="status">Kasa Home has stopped. You can close this tab.</p>
+        <p role="status">HomeView has stopped. You can close this tab.</p>
       ) : asking ? (
         <>
-          <p>Stop Kasa Home? Nobody can watch until you open it again.</p>
+          <p>Stop HomeView? Nobody can watch until you open it again.</p>
           <div className="row">
             <button className="btn btn-primary" type="button" onClick={() => void stop()}>
               Yes, stop
@@ -222,7 +222,7 @@ function StopSection() {
       ) : (
         <>
           <button className="btn" type="button" onClick={() => setAsking(true)}>
-            Stop Kasa Home
+            Stop HomeView
           </button>
           <Failure text={error} />
         </>

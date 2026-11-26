@@ -1,5 +1,5 @@
 /**
- * Check that Kasa Home can talk to the camera, without starting the server.
+ * Check that HomeView can talk to the camera, without starting the server.
  *   pnpm probe
  *
  * Prints the camera details, which password encoding worked, the camera's

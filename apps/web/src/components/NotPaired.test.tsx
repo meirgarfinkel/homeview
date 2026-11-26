@@ -6,7 +6,7 @@ it('explains how to set the phone up', () => {
   render(<NotPaired />);
   expect(
     screen.getByText(
-      "This phone isn't set up to watch from away. At home, scan the code in Kasa Home on your computer.",
+      "This phone isn't set up to watch from away. At home, scan the code in HomeView on your computer.",
     ),
   ).toBeTruthy();
 });

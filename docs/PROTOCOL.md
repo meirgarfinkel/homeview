@@ -109,14 +109,14 @@ Modules present in the app: `OSD`, `audio`, `battery`, `camSchedule`, `cloud`,
   one is running are queued; `set_stop` clears the queue.
 - `set_target` glides smoothly at a fixed ~450 units/s (a `speed` argument
   is accepted and ignored). A target past the edge is clamped to the end of
-  travel, which on a KC410S is x ±1934 and y ±387. Kasa Home holds a
+  travel, which on a KC410S is x ±1934 and y ±387. HomeView holds a
   direction by targeting the far edge, and releases with `set_stop`.
 - `set_stop` takes effect immediately, mid-step or mid-glide.
 - Timing matters more than it looks. The camera sends `Connection: close`
   on every reply, so each request needs a new TLS handshake (~0.5 s), and
   while a handshake is running the camera answers nothing else for about
   1.2 s. A connection opened ahead of time and left idle (the camera keeps
-  them for at least 30 s) answers in 20–60 ms. So Kasa Home keeps a few
+  them for at least 30 s) answers in 20–60 ms. So HomeView keeps a few
   pre-connected sockets while pan/tilt is in use, holds one back for
   `set_stop`, and replaces used ones only when nothing is moving.
 - `speed` is an integer **1–10**. 11 and above return `err_code -41203`
@@ -189,7 +189,7 @@ worked.
 
 All verified on a KC410S. After a factory reset its time zone is
 `UTC+0:00` / `GMT` and the on-screen time is `off`. The clock itself is set
-over NTP. `timezone` is a fixed offset, so Kasa Home re-sends it when
+over NTP. `timezone` is a fixed offset, so HomeView re-sends it when
 daylight saving changes.
 
 ## Live stream: `GET https://<cam>:19443/https/stream/mixed`

@@ -1,5 +1,5 @@
-appId: io.github.meirgarfinkel.kasahome
-productName: Kasa Home
+appId: io.github.meirgarfinkel.homeview
+productName: HomeView
 directories:
   output: release
   buildResources: build
@@ -17,13 +17,13 @@ publish: null
 linux:
   target: [AppImage, deb]
   category: Video
-  executableName: kasa-home
+  executableName: homeview
   maintainer: Meir Garfinkel <meirgarfinkel@users.noreply.github.com>
   icon: icon.png
 appImage:
-  artifactName: Kasa-Home-x86_64.AppImage
+  artifactName: HomeView-x86_64.AppImage
 deb:
-  artifactName: kasa-home.deb
+  artifactName: HomeView.deb
   # Setting depends replaces electron-builder's defaults, so list them again.
   depends:
     - libgtk-3-0
@@ -42,7 +42,7 @@ win:
   target: nsis
   icon: icon.png
 nsis:
-  artifactName: Kasa-Home-Setup.exe
+  artifactName: HomeViewSetup.exe
   # One-click, per-user install: no install-mode page, so no path to a UAC
   # administrator prompt. Installs under the user's own profile.
   oneClick: true
@@ -59,4 +59,4 @@ mac:
   extendInfo:
     LSUIElement: true
 dmg:
-  artifactName: Kasa-Home.dmg
+  artifactName: HomeView.dmg

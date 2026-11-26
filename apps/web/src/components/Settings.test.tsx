@@ -55,7 +55,7 @@ it('shows every section on the desktop computer', async () => {
     'Camera',
     'Set up a new or reset camera',
     'Start when this computer starts',
-    'Stop Kasa Home',
+    'Stop HomeView',
   ])
     expect(screen.getByRole('heading', { name })).toBeTruthy();
 });
@@ -64,14 +64,14 @@ it('hides the computer-only sections for other devices', async () => {
   await open({ local: false });
   expect(screen.queryByRole('heading', { name: 'Set up a new or reset camera' })).toBeNull();
   expect(screen.queryByRole('heading', { name: 'Start when this computer starts' })).toBeNull();
-  expect(screen.queryByRole('heading', { name: 'Stop Kasa Home' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Stop HomeView' })).toBeNull();
 });
 
 it('hides the desktop-only sections outside the desktop app', async () => {
   await open({ desktop: false, autostart: null });
   expect(screen.getByRole('heading', { name: 'Set up a new or reset camera' })).toBeTruthy();
   expect(screen.queryByRole('heading', { name: 'Start when this computer starts' })).toBeNull();
-  expect(screen.queryByRole('heading', { name: 'Stop Kasa Home' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Stop HomeView' })).toBeNull();
 });
 
 it('hides autostart when the server cannot change it', async () => {
@@ -144,27 +144,27 @@ it('opens camera setup in local mode for a local-only camera', async () => {
 it('saves the autostart choice', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(screen.getByLabelText('Start Kasa Home when this computer starts'));
+  await user.click(screen.getByLabelText('Start HomeView when this computer starts'));
   expect(sent('/api/app/autostart')).toEqual({ enabled: true });
 });
 
 it('asks before stopping, then says it has stopped', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(screen.getByRole('button', { name: 'Stop Kasa Home' }));
+  await user.click(screen.getByRole('button', { name: 'Stop HomeView' }));
   expect(calls('/api/app/quit')).toHaveLength(0);
   await user.click(screen.getByRole('button', { name: 'Yes, stop' }));
-  expect(await screen.findByText('Kasa Home has stopped. You can close this tab.')).toBeTruthy();
+  expect(await screen.findByText('HomeView has stopped. You can close this tab.')).toBeTruthy();
   expect(calls('/api/app/quit')).toHaveLength(1);
 });
 
 it('keeps running when stopping is cancelled', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(screen.getByRole('button', { name: 'Stop Kasa Home' }));
+  await user.click(screen.getByRole('button', { name: 'Stop HomeView' }));
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(calls('/api/app/quit')).toHaveLength(0);
-  expect(screen.getByRole('button', { name: 'Stop Kasa Home' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Stop HomeView' })).toBeTruthy();
 });
 
 it('closes', async () => {
@@ -192,12 +192,12 @@ it('lets a phone at home pair itself for use away', async () => {
   vi.stubGlobal('location', { assign });
   reply = (path) =>
     path === '/api/remote/pair-code'
-      ? json({ url: 'https://kasa-home.ts.net/pair#abc', expiresAt: '2026-11-26T12:00:00Z' })
+      ? json({ url: 'https://homeview.ts.net/pair#abc', expiresAt: '2026-11-26T12:00:00Z' })
       : undefined;
   settings = { ...base, local: false, desktop: false };
   render(<Settings onClose={() => undefined} phoneAway />);
   await user.click(await screen.findByRole('button', { name: 'Use this phone away from home' }));
-  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://kasa-home.ts.net/pair#abc'));
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://homeview.ts.net/pair#abc'));
   expect(calls('/api/remote/pair-code')[0]![1]?.method).toBe('POST');
 });
 

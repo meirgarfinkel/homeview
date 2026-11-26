@@ -16,7 +16,7 @@ import { SettingsStore } from '../src/settings/store.js';
 import { fixture, silentLogger, waitFor } from './helpers.js';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fakeTunnel.mjs', import.meta.url));
-const HOST = 'kasa-home.example.ts.net';
+const HOST = 'homeview.example.ts.net';
 const VIEWER = 'lullaby-time';
 const USER = 'parent@example.com';
 const PASS = 'correct horse';
@@ -137,7 +137,7 @@ async function turnOn(b: Built, cookie: string): Promise<void> {
 
 const localOnly = {
   error: 'local-only',
-  message: 'Only the computer running Kasa Home can do this.',
+  message: 'Only the computer running HomeView can do this.',
 };
 
 describe('the remote access controls', () => {
@@ -200,7 +200,7 @@ describe('the remote access controls', () => {
     expect(res.status).toBe(409);
     expect(res.json()).toEqual({
       error: 'needs-password',
-      message: 'Set up Kasa Home and choose a password first.',
+      message: 'Set up HomeView and choose a password first.',
     });
     expect(b.remote.status()).toMatchObject({ enabled: false, phase: 'off' });
   });
@@ -229,7 +229,7 @@ describe('the remote access controls', () => {
     expect(res.status).toBe(409);
     expect(res.json()).toEqual({
       error: 'not-available',
-      message: 'This is only available in the Kasa Home app.',
+      message: 'This is only available in the HomeView app.',
     });
     expect(b.remote.status().enabled).toBe(false);
   });
@@ -305,7 +305,7 @@ describe('the remote access controls', () => {
       const res = await call(b, 'POST', '/api/remote/pair-code', { cookie });
       expect(res.status).toBe(200);
       const body = res.json<PairCodeResponse>();
-      expect(body.url).toMatch(/^https:\/\/kasa-home\.example\.ts\.net\/pair#[A-Za-z0-9_-]{22}$/);
+      expect(body.url).toMatch(/^https:\/\/homeview\.example\.ts\.net\/pair#[A-Za-z0-9_-]{22}$/);
       const left = new Date(body.expiresAt).getTime() - Date.now();
       expect(left).toBeGreaterThan(9 * 60_000);
       expect(left).toBeLessThanOrEqual(10 * 60_000);

@@ -391,7 +391,7 @@ function check(res: RtspResponse): RtspResponse {
   }
   if (res.status >= 300 && res.status < 400) {
     throw new StreamConfigError(
-      'The camera tried to send the stream elsewhere. Kasa Home does not follow that.',
+      'The camera tried to send the stream elsewhere. HomeView does not follow that.',
     );
   }
   throw new Error(`The camera answered RTSP ${res.status} ${res.reason}`);

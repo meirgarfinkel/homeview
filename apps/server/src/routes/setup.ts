@@ -52,7 +52,7 @@ export const MIN_VIEWER_PASSWORD = 8;
 
 const alreadySetUp: ApiError = {
   error: 'already-set-up',
-  message: 'Kasa Home is already set up.',
+  message: 'HomeView is already set up.',
 };
 
 const passwordFromEnv: ApiError = {
@@ -176,7 +176,7 @@ export function reloadAfterReply(
 
 const notApplied: ApiError = {
   error: 'reload-failed',
-  message: 'The new password is saved, but Kasa Home could not start using it. Restart Kasa Home.',
+  message: 'The new password is saved, but HomeView could not start using it. Restart HomeView.',
 };
 
 /**
@@ -408,7 +408,7 @@ function registerOnboardingRoutes(app: FastifyInstance, deps: SetupDeps): void {
     if (!isLocalRequest(req)) {
       void reply.code(403).send({
         error: 'local-only',
-        message: 'Only the computer running Kasa Home can do this.',
+        message: 'Only the computer running HomeView can do this.',
       });
       return false;
     }
