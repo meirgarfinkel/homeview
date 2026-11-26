@@ -111,7 +111,7 @@ export interface Config {
   /** True when running inside the desktop app. */
   desktop: boolean;
   /** Which settings the environment sets, so settings.json can't change them. */
-  fromEnv: { viewerPassword: boolean; camera: boolean };
+  fromEnv: { viewerPassword: boolean; camera: boolean; streamResolution: boolean };
   sessionSecret: string | undefined;
   staticDir: string;
   dataDir: string;
@@ -137,6 +137,8 @@ export interface Config {
     onvifDiscoveryPort: number | undefined;
     /** Which kind of camera; the environment's camera settings are Kasa only. */
     kind: CameraKind;
+    /** The stream size asked for, from KASA_STREAM_RESOLUTION or settings. Missing: the camera's default. */
+    streamResolution: string | undefined;
     /** A standard camera's address and login, when kind is 'onvif'. */
     onvif: OnvifCameraConfig | undefined;
   };
@@ -196,6 +198,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
     : settings?.viewerPasswordHash
       ? { kind: 'hash', hash: settings.viewerPasswordHash }
       : undefined;
+  const streamResolution = e.KASA_STREAM_RESOLUTION ?? settings?.streamResolution;
   // The camera login comes as a pair: from the environment if it sets either half, else from settings.
   const loginFromEnv = e.KASA_USERNAME !== undefined || e.KASA_PASSWORD !== undefined;
   const username = loginFromEnv ? e.KASA_USERNAME : settings?.camera?.username;
@@ -217,7 +220,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
     allowNoPassword: e.ALLOW_NO_PASSWORD,
     setupComplete: Boolean(viewer || e.ALLOW_NO_PASSWORD) && cameraReady,
     desktop: false,
-    fromEnv: { viewerPassword: Boolean(e.VIEWER_PASSWORD), camera: loginFromEnv },
+    fromEnv: {
+      viewerPassword: Boolean(e.VIEWER_PASSWORD),
+      camera: loginFromEnv,
+      streamResolution: e.KASA_STREAM_RESOLUTION !== undefined,
+    },
     sessionSecret: e.SESSION_SECRET,
     staticDir: e.STATIC_DIR ? path.resolve(e.STATIC_DIR) : defaultStaticDir,
     dataDir: resolveDataDir(env),
@@ -230,7 +237,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings?: Sett
       passwordEncoding: e.KASA_PASSWORD_ENCODING,
       streamPort: e.KASA_STREAM_PORT,
       apiPort: e.KASA_API_PORT,
-      streamPath: streamPath(e.KASA_STREAM_RESOLUTION),
+      streamPath: streamPath(streamResolution),
+      streamResolution,
       certSha256: e.KASA_CERT_SHA256,
       allowPublicHost: e.KASA_ALLOW_PUBLIC_HOST,
       timeZone: e.KASA_SYNC_TIMEZONE ? (e.KASA_TIMEZONE ?? hostTimeZone()) : undefined,

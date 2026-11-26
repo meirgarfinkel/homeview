@@ -130,6 +130,7 @@ describe('GET /api/settings', () => {
       desktop: false,
       autostart: null,
       version: null,
+      streamResolution: null,
       managedByEnv: [],
     });
   });
@@ -159,6 +160,94 @@ describe('GET /api/settings', () => {
       await send(s, 'GET', '/api/settings', undefined, { cookie })
     ).json()) as SettingsResponse;
     expect(body.managedByEnv).toEqual(['viewerPassword']);
+  });
+});
+
+describe('PUT /api/settings/stream-resolution', () => {
+  async function current(s: RunningServer, cookie: string): Promise<SettingsResponse> {
+    return (await (
+      await send(s, 'GET', '/api/settings', undefined, { cookie })
+    ).json()) as SettingsResponse;
+  }
+
+  /** The new resolution shows once the reload after the reply has run. */
+  async function settlesOn(s: RunningServer, cookie: string, want: string | null): Promise<void> {
+    const until = Date.now() + 5000;
+    while ((await current(s, cookie)).streamResolution !== want) {
+      if (Date.now() > until) throw new Error(`streamResolution never became ${want}`);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  it('saves the choice, keeps the camera login and reloads', async () => {
+    const settings = await completeSettings();
+    const s = await start(settings);
+    const cookie = await login(s);
+    const res = await send(
+      s,
+      'PUT',
+      '/api/settings/stream-resolution',
+      { resolution: '1080P' },
+      { cookie },
+    );
+    expect(res.status).toBe(204);
+    expect(settings.load().streamResolution).toBe('1080P');
+    expect(settings.load().camera?.username).toBe(USER);
+    await settlesOn(s, cookie, '1080P');
+  });
+
+  it('goes back to the camera default with null', async () => {
+    const settings = await completeSettings();
+    settings.save({ ...settings.load(), streamResolution: '1080P' });
+    const s = await start(settings);
+    const cookie = await login(s);
+    expect((await current(s, cookie)).streamResolution).toBe('1080P');
+    const res = await send(
+      s,
+      'PUT',
+      '/api/settings/stream-resolution',
+      { resolution: null },
+      { cookie },
+    );
+    expect(res.status).toBe(204);
+    expect(settings.load().streamResolution).toBeUndefined();
+    await settlesOn(s, cookie, null);
+  });
+
+  it('refuses 4K and other values', async () => {
+    const settings = await completeSettings();
+    const s = await start(settings);
+    const cookie = await login(s);
+    for (const body of [{ resolution: '4K' }, { resolution: 1080 }, {}]) {
+      const res = await send(s, 'PUT', '/api/settings/stream-resolution', body, { cookie });
+      expect(res.status).toBe(400);
+    }
+    expect(settings.load().streamResolution).toBeUndefined();
+  });
+
+  it('refuses when the environment sets it', async () => {
+    const settings = await completeSettings();
+    const s = await start(settings, { env: { KASA_STREAM_RESOLUTION: '720P' } });
+    const cookie = await login(s);
+    const res = await send(
+      s,
+      'PUT',
+      '/api/settings/stream-resolution',
+      { resolution: '1080P' },
+      { cookie },
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe('resolution-from-env');
+    expect(settings.load().streamResolution).toBeUndefined();
+    const body = await current(s, cookie);
+    expect(body.streamResolution).toBe('720P');
+    expect(body.managedByEnv).toContain('streamResolution');
+  });
+
+  it('needs a session', async () => {
+    const s = await start(await completeSettings());
+    const res = await send(s, 'PUT', '/api/settings/stream-resolution', { resolution: '720P' });
+    expect(res.status).toBe(401);
   });
 });
 

@@ -15,7 +15,8 @@ import { startFakeRtsp } from '../src/dev/fakeRtsp.js';
 import { BASE_FAKE } from './onvif/fixtures.js';
 import { hashPassword } from '../src/security/passwordHash.js';
 import { CLOSE_GRACE_MS } from '../src/listen.js';
-import { lanAddress, startServer, type RunningServer } from '../src/server.js';
+import { lanAddress, sameCameraSettings, startServer, type RunningServer } from '../src/server.js';
+import { loadConfig } from '../src/config.js';
 import type * as ApiModule from '../src/routes/api.js';
 import { SettingsStore } from '../src/settings/store.js';
 import { fixture, silentLogger, waitFor, within } from './helpers.js';
@@ -752,5 +753,19 @@ describe('rebuilding while clients are connected', () => {
         cleanup();
       }
     });
+  });
+});
+
+describe('sameCameraSettings', () => {
+  const base = loadConfig({ KASA_HOST: '192.0.2.10' }, {}).camera;
+
+  it('treats a new stream size as the same camera', () => {
+    const sharper = loadConfig({ KASA_HOST: '192.0.2.10' }, { streamResolution: '1080P' }).camera;
+    expect(sameCameraSettings(base, sharper)).toBe(true);
+  });
+
+  it('treats a new address as a different camera', () => {
+    const moved = loadConfig({ KASA_HOST: '192.0.2.11' }, {}).camera;
+    expect(sameCameraSettings(base, moved)).toBe(false);
   });
 });

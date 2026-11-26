@@ -22,6 +22,18 @@ const reversing: SecretProtector = {
 };
 
 describe('SettingsStore', () => {
+  it('keeps the stream resolution across a save and load', () => {
+    const store = new SettingsStore(tmp(), undefined, silentLogger);
+    store.save({ streamResolution: '1080P' });
+    expect(store.load().streamResolution).toBe('1080P');
+  });
+
+  it('loads an older file without a stream resolution', () => {
+    const store = new SettingsStore(tmp(), undefined, silentLogger);
+    writeFileSync(store.file, JSON.stringify({ viewerPasswordHash: 'x' }));
+    expect(store.load()).toEqual({ viewerPasswordHash: 'x' });
+  });
+
   it('returns empty settings when there is no file', () => {
     expect(new SettingsStore(tmp(), undefined, silentLogger).load()).toEqual({});
   });

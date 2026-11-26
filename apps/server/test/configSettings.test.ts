@@ -3,6 +3,26 @@ import path from 'node:path';
 import { loadConfig, resolveDataDir, viewerCheck } from '../src/config.js';
 
 describe('config with settings', () => {
+  it('streams at the saved resolution', () => {
+    const c = loadConfig({}, { streamResolution: '1080P' });
+    expect(c.camera.streamPath).toContain('resolution=1080P');
+    expect(c.camera.streamResolution).toBe('1080P');
+    expect(c.fromEnv.streamResolution).toBe(false);
+  });
+
+  it('lets KASA_STREAM_RESOLUTION win over the saved resolution', () => {
+    const c = loadConfig({ KASA_STREAM_RESOLUTION: '720P' }, { streamResolution: '1080P' });
+    expect(c.camera.streamPath).toContain('resolution=720P');
+    expect(c.camera.streamPath).not.toContain('1080P');
+    expect(c.fromEnv.streamResolution).toBe(true);
+  });
+
+  it('uses the camera default with no resolution anywhere', () => {
+    const c = loadConfig({}, {});
+    expect(c.camera.streamPath).not.toContain('resolution=');
+    expect(c.camera.streamResolution).toBeUndefined();
+  });
+
   it('is not set up with empty settings and no env', () => {
     const c = loadConfig({}, {});
     expect(c.setupComplete).toBe(false);

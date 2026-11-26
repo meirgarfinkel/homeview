@@ -10,7 +10,7 @@ import {
   writeSync,
 } from 'node:fs';
 import path from 'node:path';
-import type { CameraKind } from '@kasa/shared';
+import { STREAM_RESOLUTIONS, type CameraKind, type StreamResolution } from '@kasa/shared';
 import { z } from 'zod';
 import type { Logger } from '../logger.js';
 
@@ -50,6 +50,8 @@ export interface CameraSettings {
 export interface Settings {
   viewerPasswordHash?: string;
   camera?: CameraSettings;
+  /** The stream size chosen in Settings. Missing means the camera's default. */
+  streamResolution?: StreamResolution;
 }
 
 const onvifSchema = z.object({
@@ -66,6 +68,7 @@ const onvifSchema = z.object({
 
 const diskSchema = z.object({
   viewerPasswordHash: z.string().optional(),
+  streamResolution: z.enum(STREAM_RESOLUTIONS).optional(),
   camera: z
     .object({
       username: z.string(),
@@ -114,6 +117,9 @@ export class SettingsStore {
     if (parsed.viewerPasswordHash !== undefined) {
       settings.viewerPasswordHash = parsed.viewerPasswordHash;
     }
+    if (parsed.streamResolution !== undefined) {
+      settings.streamResolution = parsed.streamResolution;
+    }
     const cam = parsed.camera;
     if (cam) {
       const password = this.decrypt(cam.passwordProtected, cam.protector);
@@ -143,6 +149,7 @@ export class SettingsStore {
       ...(next.viewerPasswordHash !== undefined
         ? { viewerPasswordHash: next.viewerPasswordHash }
         : {}),
+      ...(next.streamResolution !== undefined ? { streamResolution: next.streamResolution } : {}),
       ...(next.camera === undefined
         ? this.undecryptableCamera()
         : {
