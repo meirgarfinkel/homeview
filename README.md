@@ -1,9 +1,27 @@
-# Kasa Home
+<p align="center">
+  <img src="homeview-icon.png" alt="HomeView icon" width="96" height="96">
+</p>
 
-Watch and listen to a TP-Link Kasa camera in any web browser on your home
-Wi-Fi. You don't need the Kasa phone app, and nothing goes through the
-internet unless you turn on away-from-home viewing. It was built to use a Kasa Spot Pan Tilt (KC410S) as a baby
-monitor.
+<h1 align="center">HomeView</h1>
+
+<p align="center">
+  <b>See your camera from any screen at home, and from away.</b><br>
+  A private camera viewer for Kasa and most other cameras that runs entirely on your own computer.
+</p>
+
+<p align="center">
+  <a href="https://github.com/meirgarfinkel/homeview/releases/latest/download/HomeViewSetup.exe"><img src="docs/images/download-windows.svg" alt="Download for Windows" height="48"></a>
+  &nbsp;
+  <a href="https://github.com/meirgarfinkel/homeview/releases/latest/download/HomeView.dmg"><img src="docs/images/download-mac.svg" alt="Download for Mac" height="48"></a>
+  &nbsp;
+  <a href="https://github.com/meirgarfinkel/homeview/releases/latest/download/HomeView.deb"><img src="docs/images/download-linux.svg" alt="Download for Linux" height="48"></a>
+</p>
+
+Watch and listen to your home camera in any web browser on your home
+Wi-Fi. You don't need the camera maker's phone app, and nothing goes through
+the internet unless you turn on away-from-home viewing. It was built to use a
+Kasa Spot Pan Tilt (KC410S) as a baby monitor, and works with most other
+cameras too.
 
 - Live video and sound in the browser, with a sound meter and an alert when
   it gets loud
@@ -17,21 +35,21 @@ monitor.
 
 You don't need a terminal for any of this. You need the camera, plugged in,
 and a computer that stays on while you want to watch. That computer runs
-Kasa Home, and every phone or tablet in the house watches through it. It
+HomeView, and every phone or tablet in the house watches through it. It
 must be on the same home Wi-Fi or network as the camera. Plan on about 20
 minutes.
 
 ### 1. Download the file for your computer
 
-Pick one file from the [latest release](https://github.com/meirgarfinkel/kasa-home/releases/latest). All releases are on the
-[Releases page](https://github.com/meirgarfinkel/kasa-home/releases).
+Pick one file from the [latest release](https://github.com/meirgarfinkel/homeview/releases/latest). All releases are on the
+[Releases page](https://github.com/meirgarfinkel/homeview/releases).
 
-| Your computer                    | File                                                                                                                       |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Windows                          | [Kasa-Home-Setup.exe](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/Kasa-Home-Setup.exe)             |
-| Mac (Apple Silicon or Intel)     | [Kasa-Home.dmg](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/Kasa-Home.dmg)                         |
-| Linux, Ubuntu, Debian or similar | [kasa-home.deb](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/kasa-home.deb)                         |
-| Linux, other distributions       | [Kasa-Home-x86_64.AppImage](https://github.com/meirgarfinkel/kasa-home/releases/latest/download/Kasa-Home-x86_64.AppImage) |
+| Your computer                    | File                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Windows                          | [HomeViewSetup.exe](https://github.com/meirgarfinkel/homeview/releases/latest/download/HomeViewSetup.exe)               |
+| Mac (Apple Silicon or Intel)     | [HomeView.dmg](https://github.com/meirgarfinkel/homeview/releases/latest/download/HomeView.dmg)                         |
+| Linux, Ubuntu, Debian or similar | [HomeView.deb](https://github.com/meirgarfinkel/homeview/releases/latest/download/HomeView.deb)                         |
+| Linux, other distributions       | [HomeView-x86_64.AppImage](https://github.com/meirgarfinkel/homeview/releases/latest/download/HomeView-x86_64.AppImage) |
 
 On Ubuntu and Debian, pick the .deb. The AppImage needs a system part
 (libfuse2) that newer versions of Ubuntu don't include, so it may not open.
@@ -41,30 +59,32 @@ macOS warn you once. The steps below say what to click.
 
 ### 2. Install it
 
-**Windows.** Double-click `Kasa-Home-Setup.exe`. Windows may show "Windows
+**Windows.** Double-click `HomeViewSetup.exe`. Windows may show "Windows
 protected your PC". Click "More info", then "Run anyway". The installer
 needs no administrator password. It installs for your user only and adds
 Start menu and desktop shortcuts.
 
-**Mac.** Double-click `Kasa-Home.dmg` and drag Kasa Home to Applications.
+**Mac.** Double-click `HomeView.dmg` and drag HomeView to Applications.
 Open it from Applications. macOS says it can't verify the app. Click
 "Done", open System Settings, go to "Privacy & Security", scroll down, and
-click "Open Anyway" next to Kasa Home. Enter your Mac password if asked.
-You need macOS 12 or newer. Kasa Home shows only in the menu bar, with no
+click "Open Anyway" next to HomeView. Enter your Mac password if asked.
+You need macOS 12 or newer. HomeView shows only in the menu bar, with no
 Dock icon.
 
 **Linux, .deb.** Double-click the file and choose "Install" in the software
-installer. Then open Kasa Home from your applications menu.
+installer. Then open HomeView from your applications menu.
 
 **Linux, AppImage.** Right-click the file, choose "Properties", then
 "Permissions", and turn on "Allow executing file as program" (in some file
 managers the item is "Run as a program"). Then double-click the file.
 
-### 3. Open Kasa Home and follow the pages
+**Updates install themselves:** when a new version is out, HomeView downloads it and offers to restart into it.
 
-Kasa Home opens your browser on a welcome page, on this computer only.
+### 3. Open HomeView and follow the pages
 
-1. "Welcome to Kasa Home". Choose a password of at least 8 characters and
+HomeView opens your browser on a welcome page, on this computer only.
+
+1. "Welcome to HomeView". Choose a password of at least 8 characters and
    click "Next". Everyone who watches will type it, on any phone or computer.
 2. "Which camera do you have?". Click "Kasa", or "Another brand" for a
    Reolink, Tapo, Amcrest or other standard camera (see
@@ -103,7 +123,7 @@ Kasa Home opens your browser on a welcome page, on this computer only.
      by itself, with a wait of up to 2 minutes.
 5. "All set" shows the live picture and a QR code.
 
-On Windows, a prompt may ask whether to allow Kasa Home on networks. Allow
+On Windows, a prompt may ask whether to allow HomeView on networks. Allow
 it on private networks, or phones can't connect.
 
 ### 4. Watch on phones and other computers
@@ -120,8 +140,8 @@ it on private networks, or phones can't connect.
 4. Tap "Tap to listen" to turn on sound. Browsers need one tap before they
    play sound.
 
-On the computer that runs Kasa Home, use `http://localhost:8090` instead.
-That address gives no certificate warning. If port 8090 is taken, Kasa Home
+On the computer that runs HomeView, use `http://localhost:8090` instead.
+That address gives no certificate warning. If port 8090 is taken, HomeView
 uses the next free port, up to 8099, and the "All set" page shows the real
 address. On a phone, "Add to Home Screen" in the browser menu opens the
 monitor like an app.
@@ -130,32 +150,32 @@ monitor like an app.
 
 The tray icon (the menu bar on a Mac) has four items:
 
-- "Open Kasa Home" opens the page in your browser.
-- "Start with this computer" starts Kasa Home when you log in. It is also a
+- "Open HomeView" opens the page in your browser.
+- "Start with this computer" starts HomeView when you log in. It is also a
   checkbox on the "All set" page and in Settings.
 - "Show logs" opens the log file, which helps when asking for help.
-- "Quit" stops Kasa Home. Nobody can watch until you open it again.
+- "Quit" stops HomeView. Nobody can watch until you open it again.
 
 Open the Settings page with the gear button on the monitor. On the computer
 itself it lets you change the viewer password, the camera login, set up a
 new or reset camera ("Set up a camera"), turn on starting with the computer
-and stop Kasa Home ("Stop Kasa Home").
+and stop HomeView ("Stop HomeView").
 
 Some Linux desktops show no tray icon. Stock GNOME, for example on Fedora,
-needs an AppIndicator extension. Without one, open Kasa Home again from your
-applications menu to get the page, and use "Stop Kasa Home" in Settings to
+needs an AppIndicator extension. Without one, open HomeView again from your
+applications menu to get the page, and use "Stop HomeView" in Settings to
 quit.
 
 If you forget the viewer password, open the login page on the computer
 itself and click "Forgot it? Set a new password". Phones can't do this.
 
-Kasa Home keeps its settings and logs in this folder:
+HomeView keeps its settings and logs in this folder:
 
-| System  | Folder                                    |
-| ------- | ----------------------------------------- |
-| Linux   | `~/.config/Kasa Home`                     |
-| Windows | `%APPDATA%\Kasa Home`                     |
-| macOS   | `~/Library/Application Support/Kasa Home` |
+| System  | Folder                                   |
+| ------- | ---------------------------------------- |
+| Linux   | `~/.config/HomeView`                     |
+| Windows | `%APPDATA%\HomeView`                     |
+| macOS   | `~/Library/Application Support/HomeView` |
 
 ### 6. Watch away from home
 
@@ -168,28 +188,28 @@ source.
 You need a free [Tailscale](https://tailscale.com) account. Tailscale is a
 service that connects your computer to the internet and gives it a web
 address ending in `.ts.net`. You can sign in with an account you already
-have, such as Google or Apple. Kasa Home includes the part of Tailscale it needs, so you don't
+have, such as Google or Apple. HomeView includes the part of Tailscale it needs, so you don't
 install the Tailscale app. You also need to have finished setup and chosen a
-viewer password, because Kasa Home won't turn this on without one.
+viewer password, because HomeView won't turn this on without one.
 
 1. **Turn it on.** On the computer, open Settings, find "Away from home" and
    tick "Watch from anywhere with your phone's browser".
 2. **Sign in once.** Click "Sign in". Your browser opens Tailscale's sign-in
    page. Sign in or create the free account.
-3. **Approve once.** Click "Approve". Tailscale asks you to allow Kasa Home
+3. **Approve once.** Click "Approve". Tailscale asks you to allow HomeView
    to share a web address. Allow it.
 4. **Add a phone.** Settings now shows your address, for example
-   `https://kasa-home.tail1234.ts.net`, and an "Add a phone" button. Click it
+   `https://homeview.tail1234.ts.net`, and an "Add a phone" button. Click it
    and scan the code with the phone's camera. The code works once and
    expires after 10 minutes. The phone opens the camera. The first time, the
    address can take a few minutes to start working. If the phone can't reach
    it, wait a few minutes and scan a new code.
 
-Steps 2 and 3 happen once. After that, Kasa Home reconnects by itself when
+Steps 2 and 3 happen once. After that, HomeView reconnects by itself when
 it starts. Tailscale asks you to sign in again every few months, when the
 computer's key expires. To avoid that, open the Machines page in the
 [Tailscale admin console](https://login.tailscale.com/admin/machines), open
-the menu for the `kasa-home` machine and choose "Disable key expiry". A phone that is already signed in at home can do step 4 without
+the menu for the `homeview` machine and choose "Disable key expiry". A phone that is already signed in at home can do step 4 without
 the computer. Open its Settings and tap "Use this phone away from home".
 
 The address works at home and away, so a phone needs only one bookmark. Use
@@ -200,17 +220,17 @@ for the viewer password again, and you don't need to scan a new code.
 **What Tailscale can see.** Video, sound and the password are encrypted
 between your computer and your phone. Tailscale relays that encrypted
 traffic and can't read it, so it can't see the video. It does know your
-account and that your computer is online. Kasa Home
+account and that your computer is online. HomeView
 runs no servers of its own and sees none of your video.
 
 **What stays the same.**
 
-- The computer must stay on, with Kasa Home running, and connected to the
-  internet. If it sleeps or you quit Kasa Home, the phone can't connect.
+- The computer must stay on, with HomeView running, and connected to the
+  internet. If it sleeps or you quit HomeView, the phone can't connect.
 - Only phones you paired can reach the camera. A phone that opens the address
   without being paired sees "This phone isn't set up to watch from away" and
   can't try a password.
-- Settings, camera setup, password changes and "Stop Kasa Home" work only on
+- Settings, camera setup, password changes and "Stop HomeView" work only on
   the computer. They are refused from away, even from a paired phone.
 - The address is public, so strangers can find it and open it. They get the
   same "isn't set up" page.
@@ -219,20 +239,20 @@ runs no servers of its own and sees none of your video.
 under your address and click "Remove". It loses access on its next request,
 and any live view it has open closes.
 
-**Turn it off.** Clear the tick in "Away from home". Kasa Home stops
+**Turn it off.** Clear the tick in "Away from home". HomeView stops
 sharing the address. Your paired phones are kept, so turning it back on needs
 no new scans. To also forget the Tailscale login, click "Sign out of
 Tailscale", the small link in that section, while it is on. That turns it off
 too. You then sign in to Tailscale again the next time you turn it on. The
-address may change after that, for example to `kasa-home-1`, and your phones
+address may change after that, for example to `homeview-1`, and your phones
 may need to scan a new code.
 
 If the section shows a problem, click "Try again".
 
 ### If something goes wrong
 
-- **A phone shows "Kasa Home isn't set up yet".** Finish setup on the
-  computer that runs Kasa Home. Setup pages answer only that computer.
+- **A phone shows "HomeView isn't set up yet".** Finish setup on the
+  computer that runs HomeView. Setup pages answer only that computer.
 - **The page doesn't open on a phone.** Make sure the phone is on your home
   Wi-Fi, not mobile data, and that the address starts with `https://` and
   ends with the port, for example `:8090`.
@@ -246,7 +266,7 @@ If the section shows a problem, click "Try again".
   sound until you tap something. Check the phone isn't on silent.
 - **The camera setup stops part way.** Click "Try again" if the page offers
   it, or reset the camera and start over. The Kasa phone app can also set up
-  the camera as usual, and Kasa Home then works with it ("It already works
+  the camera as usual, and HomeView then works with it ("It already works
   in the Kasa app").
 - **Anything else.** Open the tray menu, choose "Show logs", and read the end of
   the file.
@@ -264,8 +284,8 @@ been tried.
 
 ```bash
 npm install -g pnpm@10   # add sudo on Mac or Linux if you get "permission denied"
-git clone https://github.com/meirgarfinkel/kasa-home.git
-cd kasa-home
+git clone https://github.com/meirgarfinkel/homeview.git
+cd homeview
 pnpm install
 pnpm build
 cp .env.example .env
@@ -295,27 +315,27 @@ Then check and start:
 
 ```bash
 pnpm probe   # reads from the camera only; expect a "Camera" line and "Stream (5 s)" with frames
-pnpm start   # look for "Kasa Home is running", which includes the address to open
+pnpm start   # look for "HomeView is running", which includes the address to open
 ```
 
 `pnpm discover` lists every Kasa device the computer can see. Keep the
-terminal open, because closing it stops Kasa Home. After changing `.env`,
+terminal open, because closing it stops HomeView. After changing `.env`,
 stop it with Ctrl+C and run `pnpm start` again.
 
 ### Keep it running in the background (Linux)
 
 1. Find Node.js with `which node`, and this folder with `pwd`.
-2. Create `~/.config/systemd/user/kasa-home.service` with the text below,
-   replacing `/home/you/kasa-home` and `/usr/bin/node` with your paths.
+2. Create `~/.config/systemd/user/homeview.service` with the text below,
+   replacing `/home/you/homeview` and `/usr/bin/node` with your paths.
 
    ```ini
    [Unit]
-   Description=Kasa Home
+   Description=HomeView
    Wants=network-online.target
    After=network-online.target
 
    [Service]
-   WorkingDirectory=/home/you/kasa-home
+   WorkingDirectory=/home/you/homeview
    Environment=NODE_ENV=production
    ExecStart=/usr/bin/node apps/server/dist/index.js
    Restart=on-failure
@@ -330,13 +350,13 @@ stop it with Ctrl+C and run `pnpm start` again.
 
    ```bash
    systemctl --user daemon-reload
-   systemctl --user enable --now kasa-home
+   systemctl --user enable --now homeview
    loginctl enable-linger "$USER"
    ```
 
    The last line keeps it running when you aren't logged in. View its
-   messages with `journalctl --user -u kasa-home -f`, and restart it after a
-   `.env` change with `systemctl --user restart kasa-home`. On a Mac, a tool
+   messages with `journalctl --user -u homeview -f`, and restart it after a
+   `.env` change with `systemctl --user restart homeview`. On a Mac, a tool
    such as [pm2](https://pm2.keymetrics.io) can do the same job.
 
 ### Troubleshooting for source installs
@@ -361,14 +381,14 @@ Kasa hub (the KC300/KC310 family) use a different system and don't work.
 
 ### Cameras from other brands
 
-Kasa Home also works with cameras that speak the two common standards,
+HomeView also works with cameras that speak the two common standards,
 ONVIF (for finding the camera and for pan and tilt) and RTSP (for the
 video). Most cameras sold for home use do, including Reolink, Tapo, Amcrest,
 Hikvision, Dahua and Annke. This support is new and has so far been tested
 against a simulated camera only; if your camera doesn't work, please open an
 issue with its make and model.
 
-In setup, choose "Another brand". Kasa Home searches your Wi-Fi and lists
+In setup, choose "Another brand". HomeView searches your Wi-Fi and lists
 the cameras it finds. Not in the list? Type its address: either the
 camera's IP address (with `:port` if its ONVIF port isn't 80), or its full
 `rtsp://` stream address. A typed stream address gives video and sound but
@@ -382,7 +402,7 @@ Make sure the camera is set up in its own app and on your Wi-Fi first. Then:
   are off.
 - Others: use the camera's admin username and password.
 
-Kasa Home picks a stream of at most 1080p to keep phones smooth. You can pick
+HomeView picks a stream of at most 1080p to keep phones smooth. You can pick
 another one under Settings, "Camera in use", and change to a different
 camera there too ("Change camera"). The old camera stays in use until the
 new one connects.
@@ -390,7 +410,7 @@ new one connects.
 Cameras that only work through their maker's cloud, such as Ring, Nest,
 Arlo and most Wyze cameras, have no local stream and don't work.
 
-Many of these cameras send H.265 video. Kasa Home passes it to the browser
+Many of these cameras send H.265 video. HomeView passes it to the browser
 as it is, without converting it. Safari and recent Chrome and Edge on most
 computers and phones play it; Firefox and some older devices don't, and show
 "This browser can't play this camera's video (H.265). Try another browser,
@@ -420,7 +440,7 @@ explanations. The ones you might change:
 | `PTZ_STEP_SPEED`         | `2`                | How far one tap moves the camera, 1 to 10                           |
 | `KASA_TIMEZONE`          | this computer's    | Time zone for the camera's clock and the time shown on the video    |
 
-Kasa Home finds the camera on its own and follows it if its IP address
+HomeView finds the camera on its own and follows it if its IP address
 changes. Before switching to a new address, it checks the camera's security
 certificate matches, so another device can't pretend to be the camera. It
 also keeps the camera's clock in this computer's time zone and rechecks every
@@ -430,7 +450,7 @@ hour, so daylight saving changes are picked up.
 
 The page shows a live camera, so it is locked down by default:
 
-- **Local network only.** Kasa Home refuses requests from outside this
+- **Local network only.** HomeView refuses requests from outside this
   computer's home network, including Docker and VPN interfaces. Away from
   home is the one exception, and it is off until you turn it on. See step 6.
 - **HTTPS** for video, sound, the password and the login cookie.
