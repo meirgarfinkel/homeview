@@ -12,6 +12,7 @@ const base: SettingsResponse = {
   desktop: true,
   autostart: false,
   version: null,
+  streamResolution: null,
   managedByEnv: [],
 };
 let settings: SettingsResponse;

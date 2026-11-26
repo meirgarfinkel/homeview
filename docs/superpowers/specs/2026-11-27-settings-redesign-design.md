@@ -36,12 +36,12 @@ default size (720p on the KC410S), and the only way to change that is `KASA_STRE
   The back arrow stays at the top left.
 - A category with nothing to show is hidden.
 
-| Category | Contents |
-|---|---|
-| Camera | Camera in use and Change camera, camera login, set up a new camera |
-| Video | Video quality (Kasa); the stream chooser for a standard (ONVIF) camera |
-| Access | Viewer password, away from home, "use the away address" on a phone |
-| App | Start when this computer starts, updates, stop HomeView (desktop app on this computer only) |
+| Category | Contents                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------- |
+| Camera   | Camera in use and Change camera, camera login, set up a new camera                          |
+| Video    | Video quality (Kasa); the stream chooser for a standard (ONVIF) camera                      |
+| Access   | Viewer password, away from home, "use the away address" on a phone                          |
+| App      | Start when this computer starts, updates, stop HomeView (desktop app on this computer only) |
 
 ### Video quality
 

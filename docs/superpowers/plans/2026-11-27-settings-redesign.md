@@ -35,6 +35,7 @@
 ### Task 1: Server: save, apply and expose the stream resolution
 
 **Files:**
+
 - Modify: `packages/shared/src/index.ts` (`StreamResolution`, `SettingsResponse`)
 - Modify: `apps/server/src/settings/store.ts` (`Settings`, `diskSchema`, `load`, `save`)
 - Modify: `apps/server/src/config.ts` (`fromEnv`, `streamPath` argument)
@@ -42,6 +43,7 @@
 - Test: `apps/server/test/settingsStore.test.ts`, `apps/server/test/configSettings.test.ts`, `apps/server/test/settingsRoutes.test.ts`
 
 **Interfaces:**
+
 - Produces: `export type StreamResolution = '2560x1440' | '2304x1296' | '1080P' | '720P';` in `@kasa/shared`.
 - Produces: `SettingsResponse.streamResolution: StreamResolution | null` (the value in effect from env or settings; `null` = camera default) and `'streamResolution'` added to the `managedByEnv` union.
 - Produces: `PUT /api/settings/stream-resolution` body `{ resolution: StreamResolution | null }` → 204 then reload; 400 on schema failure; 409 `{ error: 'resolution-from-env', message: 'The video quality comes from KASA_STREAM_RESOLUTION, so change it there.' }` when env sets it.
@@ -67,7 +69,10 @@ it('streams at the saved resolution', () => {
   expect(c.fromEnv.streamResolution).toBe(false);
 });
 it('lets KASA_STREAM_RESOLUTION win over the saved resolution', () => {
-  const c = loadConfig({ ...baseEnv, KASA_STREAM_RESOLUTION: '720P' }, { ...baseSettings, streamResolution: '1080P' });
+  const c = loadConfig(
+    { ...baseEnv, KASA_STREAM_RESOLUTION: '720P' },
+    { ...baseSettings, streamResolution: '1080P' },
+  );
   expect(c.camera.streamPath).toContain('resolution=720P');
   expect(c.fromEnv.streamResolution).toBe(true);
 });
@@ -78,13 +83,19 @@ describe('PUT /api/settings/stream-resolution', () => {
     // PUT { resolution: '1080P' } → 204; settings.load().streamResolution === '1080P';
     // settings.load().camera?.username === USER; GET /api/settings → streamResolution '1080P'
   });
-  it('goes back to the camera default with null', async () => { /* 204, load().streamResolution undefined, GET → null */ });
-  it('refuses 4K and other values', async () => { /* { resolution: '4K' } and {} → 400, nothing saved */ });
+  it('goes back to the camera default with null', async () => {
+    /* 204, load().streamResolution undefined, GET → null */
+  });
+  it('refuses 4K and other values', async () => {
+    /* { resolution: '4K' } and {} → 400, nothing saved */
+  });
   it('refuses when the environment sets it', async () => {
     // env KASA_STREAM_RESOLUTION=720P → 409 error 'resolution-from-env';
     // GET → streamResolution '720P', managedByEnv contains 'streamResolution'
   });
-  it('needs a session', async () => { /* no cookie → 401 */ });
+  it('needs a session', async () => {
+    /* no cookie → 401 */
+  });
 });
 ```
 
@@ -112,12 +123,14 @@ Expected: all pass.
 ### Task 2: Web: the Video quality section
 
 **Files:**
+
 - Create: `apps/web/src/components/settings/VideoQuality.tsx`
 - Modify: `apps/web/src/lib/api.ts` (`setStreamResolution`)
 - Test: `apps/web/src/components/settings/VideoQuality.test.tsx`
 - Modify fixtures that build `SettingsResponse` (e.g. `CameraSection.test.tsx`, `Settings.test.tsx`) to add `streamResolution: null`.
 
 **Interfaces:**
+
 - Consumes: Task 1's `StreamResolution`, `SettingsResponse.streamResolution`, the PUT route.
 - Produces: `api.setStreamResolution(resolution: StreamResolution | null): Promise<void>`.
 - Produces: `export function VideoQuality({ saved, fromEnv }: { saved: string | null; fromEnv: boolean })` — no outer panel or heading; Task 3 wraps it.
@@ -164,11 +177,13 @@ Expected: FAIL, module not found.
 ### Task 3: Web: sidebar-and-pane layout
 
 **Files:**
+
 - Modify: `apps/web/src/components/Settings.tsx` (layout only; the section components stay)
 - Modify: `apps/web/src/styles/app.css` (`.settings*` rules)
 - Test: `apps/web/src/components/Settings.test.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 2's `VideoQuality`; existing `ArrowIcon` with a left direction (add `left` to `ARROW_ROTATION` if missing).
 - Produces: markup `nav.settings-nav` (buttons with `aria-current="page"` on the selected one) and `section.settings-group` per category, with class `is-active` on the selected one and an `h2.settings-group-title`.
 
