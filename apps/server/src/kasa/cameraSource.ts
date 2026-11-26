@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { StreamState } from '@kasa/shared';
-import type { MediaFrame } from '../camera/driver.js';
+import { StreamAuthError, StreamBusyError, type MediaFrame } from '../camera/driver.js';
 import type { CameraCredentials } from './credentials.js';
 import { cameraRequest, type CameraResponse } from './httpClient.js';
 import { boundaryFromContentType, MultipartParser, type MultipartPart } from './multipart.js';
@@ -44,8 +44,7 @@ const BACKOFF_MS = [1000, 2000, 5000, 10000, 20000, 30000];
 const AUTH_RETRY_MS = 60_000;
 const BUSY_RETRY_MS = 15_000;
 
-export class StreamAuthError extends Error {}
-export class StreamBusyError extends Error {}
+export { StreamAuthError, StreamBusyError } from '../camera/driver.js';
 
 export class CameraSource extends EventEmitter<CameraSourceEvents> {
   private running = false;

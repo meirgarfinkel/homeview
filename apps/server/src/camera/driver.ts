@@ -12,6 +12,11 @@ import type {
  * kind of camera (Kasa, ONVIF, later cloud ones) has a driver behind this.
  */
 
+/** The camera refused the login. Retried slowly. */
+export class StreamAuthError extends Error {}
+/** The camera has too many viewers. Retried after a pause. */
+export class StreamBusyError extends Error {}
+
 export type VideoCodec = 'h264' | 'h265';
 /** Sound formats the page can play. A source may report others; the hub drops them. */
 export type AudioCodec = 'pcmu' | 'pcma' | 'aac';
