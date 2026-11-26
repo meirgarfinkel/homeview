@@ -13,12 +13,14 @@ import { safeStorageProtector } from './protector.js';
 import { runSelfTest } from './selfTest.js';
 import { createTray } from './tray.js';
 import { tunnelBinary } from './tunnelBinary.js';
-import { defaultRunner } from './updates/install.js';
+import { defaultRunner, MOVE_FIRST, macBundle, macCanUpdate } from './updates/install.js';
 import { howInstalled } from './updates/release.js';
-import { checkMessage, Updater } from './updates/updater.js';
+import { checkFromTray, Updater } from './updates/updater.js';
 
 // Before anything reads userData, so settings land in a "HomeView" folder.
 app.setName('HomeView');
+// Windows shows notifications only for the ID the installer gave the Start menu shortcut.
+if (process.platform === 'win32') app.setAppUserModelId('io.github.meirgarfinkel.homeview');
 // There are no windows, so the GPU is never needed.
 app.disableHardwareAcceleration();
 
@@ -134,6 +136,9 @@ async function run(): Promise<void> {
         runner: { ...defaultRunner, openPath: (p) => void shell.openPath(p) },
         paths,
         quit: () => void quit(),
+        ...(kind === 'mac' && !macCanUpdate(macBundle(process.execPath))
+          ? { blocked: () => MOVE_FIRST }
+          : {}),
         logger: {
           info: (m) => log.info(m),
           warn: (m) => log.warn(m),
@@ -142,15 +147,7 @@ async function run(): Promise<void> {
       })
     : undefined;
   const notify = (body: string) => new Notification({ title: 'HomeView', body }).show();
-  const checkFromTray = async () => {
-    if (!updater) return;
-    if (updater.status().state === 'ready') return updater.install();
-    try {
-      notify(checkMessage(await updater.check(), updater.status()));
-    } catch (err) {
-      notify(`Couldn't check for updates: ${(err as Error).message}`);
-    }
-  };
+  let checkingUpdates = false;
 
   const server = await startServer({
     // Only these values: .env and the shell never change the installed app.
@@ -187,7 +184,16 @@ async function run(): Promise<void> {
     setAutostart,
     showLogs: () => void shell.openPath(logFile),
     quit: () => void quit(),
-    ...(updater ? { checkForUpdates: () => void checkFromTray() } : {}),
+    ...(updater
+      ? {
+          checkingUpdates: () => checkingUpdates,
+          checkForUpdates: () =>
+            void checkFromTray(updater, notify, (on) => {
+              checkingUpdates = on;
+              refreshTray();
+            }),
+        }
+      : {}),
   });
   refreshTray = tray.refresh;
   if (updater) {

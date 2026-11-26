@@ -11,8 +11,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  defaultRunner,
   installDeb,
   macBundle,
+  macCanUpdate,
   relaunch,
   replaceAppImage,
   replaceMacApp,
@@ -33,7 +35,7 @@ function fakeRunner(
       const code = answers[cmd]?.(args) ?? 0;
       return { code, stdout: '', stderr: code ? `line one\n${cmd} said no` : '' };
     },
-    spawnDetached(cmd, args) {
+    async spawnDetached(cmd, args) {
       calls.push({ cmd, args, detached: true });
     },
     which: (cmd) => found[cmd],
@@ -67,6 +69,24 @@ describe('macBundle', () => {
     expect(macBundle('/Applications/HomeView.app/Contents/MacOS/HomeView')).toBe(
       '/Applications/HomeView.app',
     );
+  });
+});
+
+describe('macCanUpdate', () => {
+  it('only updates an app that was moved out of the disk image', () => {
+    expect(macCanUpdate('/Applications/HomeView.app')).toBe(true);
+    expect(macCanUpdate('/Users/me/Applications/HomeView.app')).toBe(true);
+    expect(macCanUpdate('/Volumes/HomeView/HomeView.app')).toBe(false);
+    expect(macCanUpdate('/private/var/folders/x/AppTranslocation/y/d/HomeView.app')).toBe(false);
+    expect(macCanUpdate('/Users/me/Downloads/HomeView')).toBe(false);
+  });
+});
+
+describe('defaultRunner.spawnDetached', () => {
+  it('fails, instead of crashing HomeView, when the program cannot start', async () => {
+    await expect(
+      defaultRunner.spawnDetached(path.join(dir, 'no-such-installer'), []),
+    ).rejects.toThrow();
   });
 });
 
@@ -154,9 +174,9 @@ describe('installDeb', () => {
 });
 
 describe('startWindowsInstaller', () => {
-  it('runs the installer quietly and has it open HomeView after', () => {
+  it('runs the installer quietly and has it open HomeView after', async () => {
     const { runner, calls } = fakeRunner();
-    startWindowsInstaller('C:\\u\\HomeViewSetup.exe', runner);
+    await startWindowsInstaller('C:\\u\\HomeViewSetup.exe', runner);
     expect(calls).toEqual([
       { cmd: 'C:\\u\\HomeViewSetup.exe', args: ['/S', '--updated', '--force-run'], detached: true },
     ]);
@@ -164,22 +184,46 @@ describe('startWindowsInstaller', () => {
 });
 
 describe('relaunch', () => {
-  it('opens the Mac app the Mac way', () => {
+  // Wait for this copy (pid 4242) to be gone: the new one can't start while it holds the lock.
+  const WAIT = 'while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; ';
+
+  it('opens the Mac app the Mac way, once this copy has quit', async () => {
     const { runner, calls } = fakeRunner();
-    relaunch('mac', runner, { execPath: '/Applications/HomeView.app/Contents/MacOS/HomeView' });
+    await relaunch(
+      'mac',
+      runner,
+      { execPath: '/Applications/HomeView.app/Contents/MacOS/HomeView' },
+      4242,
+    );
     expect(calls[0]).toEqual({
       cmd: 'sh',
-      args: ['-c', 'sleep 1; exec open -n "$0"', '/Applications/HomeView.app'],
+      args: ['-c', `${WAIT}exec open -n "$0"`, '/Applications/HomeView.app', '4242'],
       detached: true,
     });
   });
 
-  it('starts the AppImage file, not the unpacked program', () => {
+  it('starts the AppImage file, not the unpacked program, once this copy has quit', async () => {
     const { runner, calls } = fakeRunner();
-    relaunch('appimage', runner, {
-      execPath: '/tmp/.mount_x/homeview',
-      appImage: '/home/me/HV.AppImage',
-    });
-    expect(calls[0]!.args).toEqual(['-c', 'sleep 1; exec "$0"', '/home/me/HV.AppImage']);
+    await relaunch(
+      'appimage',
+      runner,
+      { execPath: '/tmp/.mount_x/homeview', appImage: '/home/me/HV.AppImage' },
+      4242,
+    );
+    expect(calls[0]!.args).toEqual(['-c', `${WAIT}exec "$0"`, '/home/me/HV.AppImage', '4242']);
+  });
+
+  it('the wait really waits for the process to exit', async () => {
+    const { execFile } = await import('node:child_process');
+    const marker = path.join(dir, 'started');
+    const sleeper = (await import('node:child_process')).spawn('sleep', ['0.6']);
+    const started = Date.now();
+    await new Promise<void>((resolve, reject) =>
+      execFile('sh', ['-c', `${WAIT}exec touch "$0"`, marker, String(sleeper.pid)], (err) =>
+        err ? reject(err) : resolve(),
+      ),
+    );
+    expect(existsSync(marker)).toBe(true);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(500);
   });
 });

@@ -18,7 +18,8 @@ import type { InstallKind } from './release.js';
 /** The outside programs the installers run, behind one seam so tests can stand in. */
 export interface Runner {
   run(cmd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }>;
-  spawnDetached(cmd: string, args: string[]): void;
+  /** Resolves once the program has started; rejects when it can't start. */
+  spawnDetached(cmd: string, args: string[]): Promise<void>;
   which(cmd: string): string | undefined;
   openPath(p: string): void;
 }
@@ -31,9 +32,16 @@ export const defaultRunner: Runner = {
         resolve({ code, stdout, stderr: stderr || (err && !stderr ? err.message : '') });
       });
     }),
-  spawnDetached: (cmd, args) => {
-    spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
-  },
+  spawnDetached: (cmd, args) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+      // Without this listener a program that can't start would crash HomeView.
+      child.once('error', reject);
+      child.once('spawn', () => {
+        child.unref();
+        resolve();
+      });
+    }),
   which: (cmd) => {
     for (const dir of (process.env['PATH'] ?? '').split(path.delimiter)) {
       const full = path.join(dir, cmd);
@@ -47,7 +55,9 @@ export const defaultRunner: Runner = {
     return undefined;
   },
   openPath: (p) => {
-    spawn('xdg-open', [p], { detached: true, stdio: 'ignore' }).unref();
+    const child = spawn('xdg-open', [p], { detached: true, stdio: 'ignore' });
+    child.once('error', () => undefined); // nothing to open it with: the bar keeps the offer
+    child.unref();
   },
 };
 
@@ -82,20 +92,24 @@ export function macBundle(execPath: string): string {
   return path.resolve(execPath, '..', '..', '..');
 }
 
-const MOVE_FIRST = 'Move HomeView into the Applications folder first, and open it from there.';
+export const MOVE_FIRST =
+  'Move HomeView into the Applications folder first, and open it from there.';
+
+/** False while HomeView runs from the disk image, or from where macOS put a downloaded copy. */
+export function macCanUpdate(bundle: string): boolean {
+  return (
+    bundle.endsWith('.app') &&
+    !bundle.includes('/AppTranslocation/') &&
+    !bundle.startsWith('/Volumes/')
+  );
+}
 
 /**
  * Copy HomeView.app out of the downloaded disk image and swap it in for this one. A running
  * app can be replaced; the new one starts on relaunch.
  */
 export async function replaceMacApp(dmg: string, bundle: string, runner: Runner): Promise<void> {
-  if (
-    !bundle.endsWith('.app') ||
-    bundle.includes('/AppTranslocation/') ||
-    bundle.startsWith('/Volumes/')
-  ) {
-    throw new Error(MOVE_FIRST);
-  }
+  if (!macCanUpdate(bundle)) throw new Error(MOVE_FIRST);
   const mount = path.join(path.dirname(dmg), 'mounted');
   const fresh = `${bundle}.new`;
   const old = `${bundle}.old`;
@@ -156,19 +170,35 @@ export async function installDeb(file: string, runner: Runner): Promise<'install
  * Run the NSIS installer quietly. It closes this copy, updates it and opens the new one
  * (--force-run); --updated tells it this is an update, not a first install.
  */
-export function startWindowsInstaller(file: string, runner: Runner): void {
-  runner.spawnDetached(file, ['/S', '--updated', '--force-run']);
+export function startWindowsInstaller(file: string, runner: Runner): Promise<void> {
+  return runner.spawnDetached(file, ['/S', '--updated', '--force-run']);
 }
 
-/** Start the new copy once this one has gone (one HomeView runs at a time). */
+/** Waits for the process "$1" to exit. */
+const WAIT_FOR_EXIT = 'while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; ';
+
+/**
+ * Start the new copy once this one has exited. Only one HomeView runs at a time, and stopping
+ * this one (its server, the tunnel helper) can take a few seconds, so a fixed delay isn't enough.
+ */
 export function relaunch(
   kind: InstallKind,
   runner: Runner,
   paths: { execPath: string; appImage?: string },
-): void {
+  pid: number = process.pid,
+): Promise<void> {
   if (kind === 'mac') {
-    runner.spawnDetached('sh', ['-c', 'sleep 1; exec open -n "$0"', macBundle(paths.execPath)]);
-    return;
+    return runner.spawnDetached('sh', [
+      '-c',
+      `${WAIT_FOR_EXIT}exec open -n "$0"`,
+      macBundle(paths.execPath),
+      String(pid),
+    ]);
   }
-  runner.spawnDetached('sh', ['-c', 'sleep 1; exec "$0"', paths.appImage ?? paths.execPath]);
+  return runner.spawnDetached('sh', [
+    '-c',
+    `${WAIT_FOR_EXIT}exec "$0"`,
+    paths.appImage ?? paths.execPath,
+    String(pid),
+  ]);
 }

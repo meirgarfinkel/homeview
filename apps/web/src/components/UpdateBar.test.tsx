@@ -83,3 +83,40 @@ it('asks again every ten minutes', async () => {
   await act(() => vi.advanceTimersByTimeAsync(TEN_MINUTES));
   expect(update).toHaveBeenCalledTimes(2);
 });
+
+it('shows why, instead of "Restarting…", when the install fails', async () => {
+  status = { state: 'ready', version: '1.2.0' };
+  render(<UpdateBar />);
+  await settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Restart to update' }));
+  await settle();
+  status = {
+    state: 'error',
+    message: 'Move HomeView into the Applications folder first, and open it from there.',
+  };
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  expect(screen.getByRole('status').textContent).toContain(
+    'Move HomeView into the Applications folder first',
+  );
+  expect(screen.getByRole('status').textContent).not.toContain('Restarting');
+});
+
+it('reloads the page once the new copy answers', async () => {
+  const reload = vi.fn();
+  vi.stubGlobal('location', { ...window.location, reload });
+  try {
+    status = { state: 'ready', version: '1.2.0' };
+    render(<UpdateBar />);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Restart to update' }));
+    await settle();
+    update.mockRejectedValue(new TypeError('Failed to fetch')); // the old copy is gone
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(reload).not.toHaveBeenCalled();
+    update.mockImplementation(async () => ({ state: 'none' }) as UpdateStatus); // the new one
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(reload).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

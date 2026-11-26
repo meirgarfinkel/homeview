@@ -49,6 +49,8 @@ export interface UpdaterOptions {
   logger: Logger;
   latest?: () => Promise<Release>;
   download?: typeof realDownload;
+  /** Why this copy can't update itself where it is (a Mac copy run from the disk image). */
+  blocked?: () => string | undefined;
   /** Stand-ins for the installers, for tests. */
   installers?: Partial<Installers>;
 }
@@ -97,6 +99,13 @@ export class Updater extends EventEmitter<{ change: [UpdateStatus] }> {
     }
     const asset = fileFor(release, kind);
     if (!asset || !isNewer(release.tag_name, this.opts.current)) return 'up-to-date';
+    const why = this.opts.blocked?.();
+    if (why) {
+      // Say so in the bar now, rather than download an update Restart can't install.
+      this.set({ state: 'error', message: why });
+      if (opts.quiet) this.opts.logger.warn(`Update not offered: ${why}`);
+      throw new Error(why);
+    }
     const version = versionOf(release.tag_name).join('.');
     this.set({ state: 'downloading', version });
     mkdirSync(this.opts.dir, { recursive: true });
@@ -125,7 +134,7 @@ export class Updater extends EventEmitter<{ change: [UpdateStatus] }> {
     const i = this.installers;
     try {
       if (kind === 'windows') {
-        i.startWindowsInstaller(file, runner); // it starts the new copy itself
+        await i.startWindowsInstaller(file, runner); // it starts the new copy itself
         this.opts.quit();
         return;
       }
@@ -136,7 +145,7 @@ export class Updater extends EventEmitter<{ change: [UpdateStatus] }> {
         this.set({ state: 'none' }); // the software installer takes it from here
         return;
       }
-      i.relaunch(kind, runner, paths);
+      await i.relaunch(kind, runner, paths);
       this.opts.quit();
     } catch (err) {
       this.opts.logger.error(`Update install failed: ${(err as Error).message}`);
@@ -169,4 +178,29 @@ export function checkMessage(result: CheckResult, s: UpdateStatus): string {
   }
   if (s.state === 'downloading') return `Downloading HomeView ${s.version}…`;
   return 'HomeView is up to date.';
+}
+
+/**
+ * The tray's "Check for updates": installs an update that's ready, or checks, and answers in a
+ * notification either way. `setChecking` switches the item's label while it checks.
+ */
+export async function checkFromTray(
+  updater: Updater,
+  notify: (body: string) => void,
+  setChecking: (on: boolean) => void,
+): Promise<void> {
+  if (updater.status().state === 'ready') {
+    await updater.install();
+    const s = updater.status();
+    if (s.state === 'error') notify(`Couldn't update HomeView: ${s.message}`);
+    return;
+  }
+  setChecking(true);
+  try {
+    notify(checkMessage(await updater.check(), updater.status()));
+  } catch (err) {
+    notify(`Couldn't check for updates: ${(err as Error).message}`);
+  } finally {
+    setChecking(false);
+  }
 }

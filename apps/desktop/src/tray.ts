@@ -11,6 +11,8 @@ export interface TrayActions {
   quit(): void;
   /** Missing when this copy can't update itself (run from source). */
   checkForUpdates?(): void;
+  /** True while a check from the tray runs. */
+  checkingUpdates?(): boolean;
 }
 
 /** The images tsup copies to dist/tray, next to the bundled main.mjs. */
@@ -49,7 +51,11 @@ export function createTray(actions: TrayActions): TrayHandle {
           },
         },
         ...(actions.checkForUpdates
-          ? [{ label: 'Check for updates', click: () => actions.checkForUpdates!() }]
+          ? [
+              actions.checkingUpdates?.()
+                ? { label: 'Checking for updates…', enabled: false }
+                : { label: 'Check for updates', click: () => actions.checkForUpdates!() },
+            ]
           : []),
         { label: 'Show logs', click: () => actions.showLogs() },
         { type: 'separator' },

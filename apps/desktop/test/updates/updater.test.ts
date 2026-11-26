@@ -4,7 +4,12 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Runner } from '../../src/updates/install.js';
 import type { Release } from '../../src/updates/release.js';
-import { checkMessage, Updater, type UpdaterOptions } from '../../src/updates/updater.js';
+import {
+  checkFromTray,
+  checkMessage,
+  Updater,
+  type UpdaterOptions,
+} from '../../src/updates/updater.js';
 
 const release = (tag: string): Release => ({
   tag_name: tag,
@@ -19,7 +24,7 @@ const release = (tag: string): Release => ({
 
 const runner: Runner = {
   run: async () => ({ code: 0, stdout: '', stderr: '' }),
-  spawnDetached: () => undefined,
+  spawnDetached: async () => undefined,
   which: () => undefined,
   openPath: () => undefined,
 };
@@ -111,6 +116,14 @@ describe('Updater.check', () => {
     expect(download).toHaveBeenCalledTimes(1);
   });
 
+  it('tells a copy that cannot update why, instead of downloading', async () => {
+    const MOVE = 'Move HomeView into the Applications folder first, and open it from there.';
+    const { updater, download } = make({ kind: 'appimage', blocked: () => MOVE });
+    await expect(updater.check()).rejects.toThrow(MOVE);
+    expect(download).not.toHaveBeenCalled();
+    expect(updater.status()).toEqual({ state: 'error', message: MOVE });
+  });
+
   it('a quiet check that fails stays quiet and logs it', async () => {
     const { updater } = make({
       latest: async () => {
@@ -156,6 +169,26 @@ describe('Updater.install', () => {
     expect(installers.startWindowsInstaller).toHaveBeenCalledTimes(1);
     expect(installers.relaunch).not.toHaveBeenCalled();
     expect(quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps running and says why when the installer cannot start', async () => {
+    const { updater, quit } = await ready({
+      kind: 'windows',
+      latest: async () => ({
+        tag_name: 'v0.2.0',
+        assets: [
+          { name: 'HomeViewSetup.exe', browser_download_url: 'https://x.invalid/s', size: 3 },
+        ],
+      }),
+      installers: {
+        startWindowsInstaller: vi.fn(async () => {
+          throw new Error('spawn EACCES');
+        }),
+      },
+    });
+    await updater.install();
+    expect(quit).not.toHaveBeenCalled();
+    expect(updater.status()).toMatchObject({ state: 'error' });
   });
 
   it('installs once when Restart is pressed twice', async () => {
@@ -241,5 +274,48 @@ describe('checkMessage', () => {
     expect(checkMessage('ready', { state: 'ready', version: '0.2.0' })).toBe(
       'HomeView 0.2.0 is ready. Open HomeView to restart into it.',
     );
+  });
+});
+
+describe('checkFromTray', () => {
+  it('shows "Checking for updates…" while it checks, then says what it found', async () => {
+    const { updater } = make({ latest: async () => release('v0.1.0') });
+    const notify = vi.fn();
+    const checking: boolean[] = [];
+    await checkFromTray(updater, notify, (on) => checking.push(on));
+    expect(checking).toEqual([true, false]);
+    expect(notify).toHaveBeenCalledWith('HomeView is up to date.');
+  });
+
+  it('says why a check failed', async () => {
+    const { updater } = make({
+      latest: async () => {
+        throw new Error('GitHub answered 503');
+      },
+    });
+    const notify = vi.fn();
+    await checkFromTray(updater, notify, () => undefined);
+    expect(notify).toHaveBeenCalledWith("Couldn't check for updates: GitHub answered 503");
+  });
+
+  it('installs a ready update, and says why when that fails', async () => {
+    const { updater, quit } = make({
+      kind: 'mac',
+      latest: async () => ({
+        tag_name: 'v0.2.0',
+        assets: [{ name: 'HomeView.dmg', browser_download_url: 'https://x.invalid/d', size: 3 }],
+      }),
+      installers: {
+        replaceMacApp: vi.fn(async () => {
+          throw new Error('The update was cancelled.');
+        }),
+      },
+    });
+    await updater.check();
+    await settled();
+    const notify = vi.fn();
+    await checkFromTray(updater, notify, () => undefined);
+    expect(quit).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith("Couldn't update HomeView: The update was cancelled.");
   });
 });
