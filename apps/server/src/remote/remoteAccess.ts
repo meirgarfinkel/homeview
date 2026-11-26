@@ -3,7 +3,7 @@ import type { RemoteStatus } from '@kasa/shared';
 import type { RemoteGateDeps } from '../app.js';
 import type { Logger } from '../logger.js';
 import { DeviceStore } from './devices.js';
-import { PairingCodes } from './pairing.js';
+import { PairAttempts, PairingCodes } from './pairing.js';
 import { TunnelManager, type TunnelOptions } from './tunnel.js';
 
 /** The only links openLink() will hand to the system browser. */
@@ -17,6 +17,7 @@ const TAILSCALE_LOGIN = 'https://login.tailscale.com/';
 export class RemoteAccess implements RemoteGateDeps {
   readonly devices: DeviceStore;
   readonly pairing = new PairingCodes();
+  readonly pairAttempts = new PairAttempts();
   /** True when there is a helper to run, which means the desktop app. */
   readonly available: boolean;
   private tunnel: TunnelManager | undefined;

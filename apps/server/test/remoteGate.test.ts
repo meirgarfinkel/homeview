@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { LIVE_WS_PATH, type StreamState } from '@kasa/shared';
+import { LIVE_WS_PATH, type RemoteStatus, type StreamState } from '@kasa/shared';
 import { buildApp, type CameraService } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { listenHttp, type DualListener } from '../src/listen.js';
@@ -45,12 +45,22 @@ interface Running {
   port: number;
   /** How many times the desktop app's quit hook ran. */
   quits: number;
+  /** Builds a new app with the same remote access and swaps it in, like a reload. */
+  reload(): Promise<void>;
 }
 
 /** Remote access as if the helper were running, with a secret and host the test can change. */
 class FixedRemote extends RemoteAccess {
   secretValue: string | undefined = SECRET;
   hostName: string | undefined = HOST;
+  /** Reports the tunnel as on, so the pair-code route would hand out codes. */
+  on = false;
+  override status(): RemoteStatus {
+    return this.on ? { ...super.status(), phase: 'on', url: `https://${HOST}` } : super.status();
+  }
+  override pairUrl(code: string): string | undefined {
+    return this.on ? `https://${HOST}/pair#${code}` : super.pairUrl(code);
+  }
   override secret(): string | undefined {
     return this.secretValue;
   }
@@ -93,15 +103,18 @@ async function start(
   const hub = new LiveHub({ source: new StillSource(), logger: silentLogger, idleTimeoutMs: 0 });
   const counts = { quits: 0 };
   // The settings and setup routes, and the quit hook, so the gate has real routes to guard.
-  const app = await buildApp({
-    config,
-    ...(opts.noCamera ? {} : { camera, hub }),
-    logger: silentLogger,
-    remote,
-    settings: new SettingsStore(path.join(dir, 'settings')),
-    hooks: { quit: () => void counts.quits++ },
-    desktop: true,
-  });
+  const settings = new SettingsStore(path.join(dir, 'settings'));
+  const build = () =>
+    buildApp({
+      config,
+      ...(opts.noCamera ? {} : { camera, hub }),
+      logger: silentLogger,
+      remote,
+      settings,
+      hooks: { quit: () => void counts.quits++ },
+      desktop: true,
+    });
+  const app = await build();
   const listener = await listenHttp(app, {
     host: '127.0.0.1',
     port: 0,
@@ -116,6 +129,7 @@ async function start(
     get quits() {
       return counts.quits;
     },
+    reload: async () => listener.swap(await build()),
   };
   running.push(r);
   return r;
@@ -259,6 +273,18 @@ describe('the remote gate', () => {
     expect((await attempt('198.51.100.2')).status).toBe(401);
   });
 
+  it('keeps counting pairing attempts through a reload', async () => {
+    const attempt = () =>
+      call(r, '/api/remote/pair', {
+        method: 'POST',
+        headers: tunnel(undefined, '198.51.100.1'),
+        body: { code: 'x'.repeat(22) },
+      });
+    for (let i = 0; i < 10; i++) expect((await attempt()).status).toBe(401);
+    await r.reload();
+    expect((await attempt()).status).toBe(429);
+  });
+
   it('limits pairing attempts overall', async () => {
     const attempt = (i: number) =>
       call(r, '/api/remote/pair', {
@@ -329,6 +355,17 @@ describe('the remote gate', () => {
       expect(res.json()).toEqual(localOnly);
     }
     expect(r.quits).toBe(0);
+  });
+
+  it('never makes a pairing code through the tunnel, even while remote access is on', async () => {
+    r.remote.on = true;
+    const { cookie } = await pair(r);
+    for (const headers of [tunnel(), tunnel(cookie)]) {
+      const res = await call(r, '/api/remote/pair-code', { method: 'POST', headers, body: {} });
+      expect(res.status).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'local-only' });
+      expect(res.body).not.toContain('/pair#');
+    }
   });
 
   it('checks the route a percent-encoded path reaches, not the raw path', async () => {

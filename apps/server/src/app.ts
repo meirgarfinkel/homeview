@@ -17,7 +17,7 @@ import { registerSettingsRoutes } from './routes/settings.js';
 import { registerSetupRoutes, type OnboardingSlot, type SetupDeps } from './routes/setup.js';
 import type { WifiSwitcher } from './setup/wifiSwitcher.js';
 import { DEVICE_COOKIE, type DeviceStore } from './remote/devices.js';
-import type { PairingCodes } from './remote/pairing.js';
+import type { PairAttempts, PairingCodes } from './remote/pairing.js';
 import type { RemoteAccess } from './remote/remoteAccess.js';
 import {
   createHostAllowlist,
@@ -50,6 +50,7 @@ export interface RemoteGateDeps {
   host(): string | undefined;
   devices: DeviceStore;
   pairing: PairingCodes;
+  pairAttempts: PairAttempts;
 }
 
 /** Things only the desktop app can do, offered to the setup and settings pages. */

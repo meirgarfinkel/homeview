@@ -3,10 +3,8 @@ import type { RemoteGateDeps } from '../app.js';
 import { deviceName } from '../remote/deviceName.js';
 import { deviceCookie } from '../remote/devices.js';
 import { clientIp, isRemote } from '../security/remoteRequest.js';
-import { LoginRateLimiter, sessionCookie, type SessionManager } from '../security/session.js';
+import { sessionCookie, type SessionManager } from '../security/session.js';
 import { notSetUp } from './api.js';
-
-const WINDOW_MS = 15 * 60_000;
 
 const rateLimited = { error: 'rate_limited', message: 'Too many attempts. Try again later.' };
 
@@ -25,8 +23,6 @@ export async function registerRemotePairRoute(
   deps: { remote: RemoteGateDeps; sessions: SessionManager | undefined },
 ): Promise<void> {
   const { remote, sessions } = deps;
-  const perAddress = new LoginRateLimiter(10, WINDOW_MS);
-  const overall = new LoginRateLimiter(30, WINDOW_MS);
 
   app.post<{ Body: { code: string } }>(
     '/api/remote/pair',
@@ -45,7 +41,7 @@ export async function registerRemotePairRoute(
       // The gate already refuses this without a password. Check again rather than trust it.
       if (!sessions) return reply.code(403).send(notSetUp);
       const ip = clientIp(req);
-      if (!perAddress.hit(ip) || !overall.hit('all')) {
+      if (!remote.pairAttempts.hit(ip)) {
         req.log.warn({ ip }, 'Too many pairing attempts');
         return reply.code(429).send(rateLimited);
       }
