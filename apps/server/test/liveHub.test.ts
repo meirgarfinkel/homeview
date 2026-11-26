@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BinaryKind, type StreamState } from '@kasa/shared';
 import { accessUnits } from '../src/dev/fakeCamera.js';
-import type { MediaFrame, VideoCodec } from '../src/camera/driver.js';
+import type { AudioFrame, MediaFrame, VideoCodec } from '../src/camera/driver.js';
 import { h265AccessUnits, h265NalType } from '../src/media/h265.js';
 import { splitAnnexB } from '../src/media/h264.js';
 import { LiveHub, type FrameSource, type Viewer } from '../src/media/liveHub.js';
@@ -14,6 +14,9 @@ class FakeSource extends EventEmitter implements FrameSource {
   stop = vi.fn();
   video(data: Buffer, timestamp: number, codec: VideoCodec = 'h264') {
     this.emit('frame', { kind: 'video', codec, data, timestamp } satisfies MediaFrame);
+  }
+  sound(frame: Omit<AudioFrame, 'kind' | 'timestamp'>) {
+    this.emit('frame', { kind: 'audio', timestamp: 0, ...frame } satisfies MediaFrame);
   }
   audio(data: Buffer) {
     this.emit('frame', {
@@ -229,6 +232,72 @@ describe('LiveHub', () => {
       expect(codecs[0]).toMatch(/avc1/);
       expect(codecs[1]).toMatch(/hvc1/);
       expect(viewer.kinds().filter((k) => k === BinaryKind.VideoInit)).toHaveLength(2);
+    });
+  });
+
+  describe('sound formats', () => {
+    type Codec = {
+      audio?: { codec: string; sampleRate: number; channels: number; config?: string } | null;
+    };
+    const lastCodec = (v: RecordingViewer) =>
+      v.json.filter((m) => m['type'] === 'codec').at(-1) as Codec | undefined;
+    const audioFrames = (v: RecordingViewer) =>
+      v.kinds().filter((k) => k === BinaryKind.Audio).length;
+
+    it('codec message names pcma, 8000, 1 for an A-law source', () => {
+      const { source, hub } = setup();
+      const viewer = new RecordingViewer();
+      hub.addViewer(viewer);
+      source.sound({ codec: 'pcma', sampleRate: 8000, channels: 1, data: Buffer.alloc(160) });
+      feed(source, 0, 3);
+      expect(lastCodec(viewer)?.audio).toEqual({ codec: 'pcma', sampleRate: 8000, channels: 1 });
+      expect(audioFrames(viewer)).toBe(1);
+    });
+
+    it('codec message carries the AAC config as base64', () => {
+      const { source, hub } = setup();
+      const viewer = new RecordingViewer();
+      hub.addViewer(viewer);
+      const config = Buffer.from([0x14, 0x08]);
+      source.sound({
+        codec: 'aac',
+        sampleRate: 16000,
+        channels: 1,
+        config,
+        data: Buffer.alloc(40),
+      });
+      feed(source, 0, 3);
+      expect(lastCodec(viewer)?.audio).toEqual({
+        codec: 'aac',
+        sampleRate: 16000,
+        channels: 1,
+        config: config.toString('base64'),
+      });
+    });
+
+    it('an unsupported audio codec gives audio: null and drops those frames', () => {
+      const { source, hub } = setup();
+      const viewer = new RecordingViewer();
+      hub.addViewer(viewer);
+      feed(source, 0, 3);
+      source.sound({ codec: 'g726', sampleRate: 8000, channels: 1, data: Buffer.alloc(80) });
+      expect(lastCodec(viewer)?.audio).toBeNull();
+      expect(audioFrames(viewer)).toBe(0);
+    });
+
+    it('sound that starts after the video updates the codec message without a new init segment', () => {
+      const { source, hub } = setup();
+      const viewer = new RecordingViewer();
+      hub.addViewer(viewer);
+      feed(source, 0, 3);
+      expect(lastCodec(viewer)?.audio).toBeUndefined();
+      source.sound({ codec: 'pcmu', sampleRate: 8000, channels: 1, data: Buffer.alloc(160) });
+      expect(lastCodec(viewer)?.audio).toEqual({ codec: 'pcmu', sampleRate: 8000, channels: 1 });
+      expect(viewer.kinds().filter((k) => k === BinaryKind.VideoInit)).toHaveLength(1);
+      // A late joiner gets the sound format with the video's.
+      const late = new RecordingViewer();
+      hub.addViewer(late);
+      expect(lastCodec(late)?.audio).toEqual({ codec: 'pcmu', sampleRate: 8000, channels: 1 });
     });
   });
 });

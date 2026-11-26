@@ -1,6 +1,11 @@
-import { BinaryKind, type CodecMessage, type StreamState, type StreamStats } from '@kasa/shared';
-import type { FrameSource, MediaFrame, VideoCodec } from '../camera/driver.js';
-import { AUDIO_SAMPLE_RATE } from '../kasa/cameraSource.js';
+import {
+  BinaryKind,
+  type AudioFormat,
+  type CodecMessage,
+  type StreamState,
+  type StreamStats,
+} from '@kasa/shared';
+import type { AudioFrame, FrameSource, MediaFrame, VideoCodec } from '../camera/driver.js';
 import type { Logger } from '../logger.js';
 import { initSegment, mediaFragment, mimeType, VIDEO_TIMESCALE } from './fmp4.js';
 import { NalType, nalType, parseSps, splitAnnexB, toAvcc } from './h264.js';
@@ -49,6 +54,23 @@ export interface LiveHubOptions {
   maxViewerBufferBytes?: number;
   /** Upper bound for the cached GOP. */
   maxGopBytes?: number;
+}
+
+const PLAYABLE_AUDIO = new Set<string>(['pcmu', 'pcma', 'aac']);
+
+function audioFormatOf(frame: AudioFrame): AudioFormat | null {
+  if (!PLAYABLE_AUDIO.has(frame.codec)) return null;
+  if (frame.codec === 'aac' && !frame.config) return null;
+  return {
+    codec: frame.codec as AudioFormat['codec'],
+    sampleRate: frame.sampleRate,
+    channels: frame.channels,
+    ...(frame.codec === 'aac' && frame.config ? { config: frame.config.toString('base64') } : {}),
+  };
+}
+
+function sameAudioFormat(a: AudioFormat | null | undefined, b: AudioFormat | null | undefined) {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 interface ParameterSets {
@@ -124,6 +146,8 @@ export class LiveHub {
   /** The latest parameter sets seen in the stream, per codec. */
   private seen: ParameterSets | undefined;
   private codec: CodecMessage | undefined;
+  /** The sound format, once known; null when it can't be played. */
+  private audioFormat: AudioFormat | null | undefined;
   /** Tagged init segment, ready to send. */
   private init: Buffer | undefined;
   private sequence = 0;
@@ -236,7 +260,7 @@ export class LiveHub {
 
   private onFrame(frame: MediaFrame): void {
     if (frame.kind === 'audio') {
-      this.broadcastAudio(frame.data);
+      this.onAudio(frame);
       return;
     }
     this.recordStats(frame.data.length);
@@ -347,7 +371,7 @@ export class LiveHub {
     this.codec = {
       type: 'codec',
       video: { mimeType: mimeType(info.codec), width: info.width, height: info.height },
-      audio: { codec: 'pcmu', sampleRate: AUDIO_SAMPLE_RATE },
+      ...(this.audioFormat !== undefined ? { audio: this.audioFormat } : {}),
     };
     this.opts.logger.info(
       { codec: info.codec, width: info.width, height: info.height },
@@ -377,6 +401,22 @@ export class LiveHub {
       }
       state.viewer.sendBinary(fragment);
     }
+  }
+
+  private onAudio(frame: AudioFrame): void {
+    const format = audioFormatOf(frame);
+    if (!sameAudioFormat(format, this.audioFormat)) {
+      this.audioFormat = format;
+      if (format === null) {
+        this.opts.logger.warn({ codec: frame.codec }, "The camera's sound format isn't supported");
+      }
+      // Tell viewers without touching the video: no new init segment.
+      if (this.codec) {
+        this.codec = { ...this.codec, audio: format };
+        for (const state of this.viewers.values()) state.viewer.sendJson(this.codec);
+      }
+    }
+    if (format !== null) this.broadcastAudio(frame.data);
   }
 
   private broadcastAudio(data: Buffer): void {

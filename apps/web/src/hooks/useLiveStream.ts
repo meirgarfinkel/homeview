@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import type { CodecMessage, StreamState } from '@kasa/shared';
+import type { AudioFormat, CodecMessage, StreamState } from '@kasa/shared';
 import { PcmPlayer } from '../lib/audioPlayer';
-import { decodeMulaw, levelFromRms, rms } from '../lib/g711';
+import { levelFromRms, rms } from '../lib/g711';
+import { createSoundDecoder, type SoundDecoder } from '../lib/soundDecoder';
 import { api, notifyUnauthorized } from '../lib/api';
 import { LiveConnection, type ConnectionState } from '../lib/liveConnection';
 import { isMseSupported, MsePlayer } from '../lib/msePlayer';
@@ -12,6 +13,8 @@ export interface LiveStream {
   detail: string | undefined;
   codec: CodecMessage | undefined;
   playerError: string | undefined;
+  /** True when the camera's sound is in a format this page can't play. */
+  soundUnsupported: boolean;
   listening: boolean;
   startListening(): Promise<void>;
   stopListening(): void;
@@ -27,6 +30,7 @@ export function useLiveStream(videoRef: RefObject<HTMLVideoElement | null>): Liv
   const [detail, setDetail] = useState<string>();
   const [codec, setCodec] = useState<CodecMessage>();
   const [playerError, setPlayerError] = useState<string>();
+  const [soundUnsupported, setSoundUnsupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [volume, setVolumeState] = useState(1);
   const levelRef = useRef(0);
@@ -41,6 +45,35 @@ export function useLiveStream(videoRef: RefObject<HTMLVideoElement | null>): Liv
     const mse = new MsePlayer(video);
     const audio = audioRef.current;
     let mseReady = false;
+    let shownVideo: CodecMessage['video'] | undefined;
+    let soundFormat: AudioFormat | null | undefined;
+    let sound: SoundDecoder | undefined;
+    let closed = false;
+
+    const onPcm = (samples: Float32Array) => {
+      const level = levelFromRms(rms(samples));
+      // Fast attack, slow release, like a VU meter.
+      const prev = levelRef.current;
+      levelRef.current = level > prev ? level : prev * 0.85 + level * 0.15;
+      audio.push(samples);
+    };
+
+    const applySound = (format: AudioFormat | null | undefined) => {
+      if (JSON.stringify(format) === JSON.stringify(soundFormat)) return;
+      soundFormat = format;
+      sound?.close();
+      sound = undefined;
+      if (!format) {
+        setSoundUnsupported(format === null);
+        return;
+      }
+      audio.setSampleRate(format.sampleRate);
+      void createSoundDecoder(format, onPcm).then((decoder) => {
+        if (closed || soundFormat !== format) return decoder?.close();
+        sound = decoder;
+        setSoundUnsupported(decoder === undefined);
+      });
+    };
 
     const conn = new LiveConnection({
       onConnection: setConnection,
@@ -61,7 +94,10 @@ export function useLiveStream(videoRef: RefObject<HTMLVideoElement | null>): Liv
           setDetail(msg.detail);
         } else if (msg.type === 'codec') {
           setCodec(msg);
-          audio.setSampleRate(msg.audio.sampleRate);
+          applySound(msg.audio);
+          // A sound-only change keeps the video playing.
+          if (JSON.stringify(msg.video) === JSON.stringify(shownVideo) && mseReady) return;
+          shownVideo = msg.video;
           try {
             mse.reset(msg.video.mimeType);
             mseReady = true;
@@ -74,17 +110,12 @@ export function useLiveStream(videoRef: RefObject<HTMLVideoElement | null>): Liv
       },
       onVideoInit: (data) => mseReady && mse.append(data as Uint8Array<ArrayBuffer>),
       onVideoFragment: (data) => mseReady && mse.append(data as Uint8Array<ArrayBuffer>),
-      onAudio: (data) => {
-        const samples = decodeMulaw(data);
-        const level = levelFromRms(rms(samples));
-        // Fast attack, slow release, like a VU meter.
-        const prev = levelRef.current;
-        levelRef.current = level > prev ? level : prev * 0.85 + level * 0.15;
-        audio.push(samples);
-      },
+      onAudio: (data) => sound?.decode(data),
     });
     conn.start();
     return () => {
+      closed = true;
+      sound?.close();
       conn.stop();
       mse.destroy();
       audio.disable();
@@ -112,6 +143,7 @@ export function useLiveStream(videoRef: RefObject<HTMLVideoElement | null>): Liv
     detail,
     codec,
     playerError,
+    soundUnsupported,
     listening,
     startListening,
     stopListening,

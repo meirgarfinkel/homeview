@@ -16,7 +16,7 @@ export const BinaryKind = {
   VideoInit: 1,
   /** One fMP4 media fragment (moof + mdat) holding a single video frame. */
   VideoFragment: 2,
-  /** Raw G.711 mu-law audio, mono. Sample rate comes from CodecMessage. */
+  /** One encoded sound frame in the format CodecMessage.audio names (AAC without ADTS). */
   Audio: 3,
 } as const;
 export type BinaryKind = (typeof BinaryKind)[keyof typeof BinaryKind];
@@ -38,10 +38,19 @@ export interface CodecMessage {
     width: number;
     height: number;
   };
-  audio: {
-    codec: 'pcmu';
-    sampleRate: number;
-  };
+  /**
+   * The sound format. Absent until the camera's sound starts; null when the
+   * page can't play it (a format we don't support).
+   */
+  audio?: AudioFormat | null;
+}
+
+export interface AudioFormat {
+  codec: 'pcmu' | 'pcma' | 'aac';
+  sampleRate: number;
+  channels: number;
+  /** AAC AudioSpecificConfig, base64. AAC only. */
+  config?: string;
 }
 
 export type ServerMessage = StatusMessage | CodecMessage;

@@ -17,6 +17,25 @@ export function decodeMulaw(bytes: Uint8Array): Float32Array {
   return out;
 }
 
+/** G.711 A-law -> float32 [-1, 1], per ITU-T G.711. */
+export const ALAW_TO_FLOAT = (() => {
+  const table = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const a = i ^ 0x55;
+    const segment = (a & 0x70) >> 4;
+    let magnitude = (a & 0x0f) << 4;
+    magnitude = segment === 0 ? magnitude + 8 : (magnitude + 0x108) << (segment - 1);
+    table[i] = ((a & 0x80 ? magnitude : -magnitude) / 32768) as number;
+  }
+  return table;
+})();
+
+export function decodeAlaw(bytes: Uint8Array): Float32Array {
+  const out = new Float32Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = ALAW_TO_FLOAT[bytes[i]!]!;
+  return out;
+}
+
 /** Root-mean-square of a block of samples. */
 export function rms(samples: Float32Array): number {
   if (samples.length === 0) return 0;
