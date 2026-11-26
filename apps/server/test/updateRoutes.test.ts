@@ -80,6 +80,21 @@ describe('update routes', () => {
     }
   });
 
+  it('check says why it failed, in words', async () => {
+    const app = await build({
+      checkForUpdates: async () => {
+        throw new Error('GitHub answered 503');
+      },
+    });
+    try {
+      const res = await app.inject({ method: 'POST', url: '/api/app/update/check', ...local });
+      expect(res.statusCode).toBe(502);
+      expect(res.json()).toEqual({ error: 'update-check-failed', message: 'GitHub answered 503' });
+    } finally {
+      await app.close();
+    }
+  });
+
   it('refuse other computers on the network', async () => {
     const installUpdate = vi.fn();
     const app = await build({

@@ -11,6 +11,7 @@ const base: SettingsResponse = {
   local: true,
   desktop: true,
   autostart: false,
+  version: null,
   managedByEnv: [],
 };
 let settings: SettingsResponse;

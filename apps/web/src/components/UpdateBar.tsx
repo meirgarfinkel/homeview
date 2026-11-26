@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { UpdateStatus } from '@kasa/shared';
+import { useRestartWatch } from '../hooks/useRestartWatch';
 import { api } from '../lib/api';
 
 /** How often to ask whether an update is ready. */
 const POLL_MS = 10 * 60 * 1000;
-/** How often to ask while restarting, to show a failure or find the new copy. */
-const RESTART_POLL_MS = 2000;
 
 /**
  * A strip above the page, on this computer in the desktop app, when a downloaded update is
@@ -32,30 +31,11 @@ export function UpdateBar() {
     };
   }, []);
 
-  // While restarting: an error means it didn't install, so show it. Any other answer than
-  // "ready" comes from the new copy, so load its page.
-  useEffect(() => {
-    if (!restarting) return;
-    let live = true;
-    const timer = setInterval(() => {
-      api.update().then(
-        (s) => {
-          if (!live) return;
-          if (s.state === 'error') {
-            setStatus(s);
-            setRestarting(false);
-          } else if (s.state !== 'ready') {
-            location.reload();
-          }
-        },
-        () => undefined, // the old copy has gone; the new one isn't up yet
-      );
-    }, RESTART_POLL_MS);
-    return () => {
-      live = false;
-      clearInterval(timer);
-    };
-  }, [restarting]);
+  const failed = useCallback((s: UpdateStatus) => {
+    setStatus(s);
+    setRestarting(false);
+  }, []);
+  useRestartWatch(restarting, failed);
 
   if (restarting) {
     return (
