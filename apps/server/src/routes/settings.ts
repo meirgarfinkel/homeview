@@ -1,11 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ApiError, SettingsResponse } from '@kasa/shared';
+import type { ApiError, OnvifProfilesResult, SettingsResponse } from '@kasa/shared';
 import type { Config } from '../config.js';
 import { isLocalRequest } from '../security/remoteRequest.js';
 import { verifyPassword } from '../security/passwordHash.js';
 import type { SettingsStore } from '../settings/store.js';
 import type { ServerHooks } from '../app.js';
-import { profileExists } from './onvifSetup.js';
+import { savedCameraProfiles } from './onvifSetup.js';
 import {
   existingCameraSchema,
   MIN_VIEWER_PASSWORD,
@@ -83,6 +83,11 @@ const notOnvif: ApiError = {
   message: 'Only a standard camera has stream profiles to choose from.',
 };
 
+const noAnswer: ApiError = {
+  error: 'no-answer',
+  message: 'No answer from the camera.',
+};
+
 const noSuchProfile: ApiError = {
   error: 'no-such-profile',
   message: "The camera doesn't have that stream.",
@@ -152,6 +157,23 @@ export async function registerSettingsRoutes(
     },
   );
 
+  // A standard camera's streams, to choose from on this computer.
+  app.get('/api/settings/camera-profiles', async (req, reply) => {
+    if (!isLocalRequest(req)) return reply.code(403).send(localOnly);
+    if (config.camera.kind !== 'onvif' || !config.camera.onvif || config.camera.onvif.rtspUrl) {
+      return reply.code(409).send(notOnvif);
+    }
+    try {
+      const result: OnvifProfilesResult = {
+        profiles: await savedCameraProfiles(config),
+        ...(config.camera.onvif.profileToken ? { current: config.camera.onvif.profileToken } : {}),
+      };
+      return result;
+    } catch {
+      return reply.code(504).send(noAnswer);
+    }
+  });
+
   // A standard camera's stream profile, from this computer.
   app.post<{ Body: { profileToken: string } }>(
     '/api/settings/camera-profile',
@@ -162,7 +184,8 @@ export async function registerSettingsRoutes(
         return reply.code(409).send(notOnvif);
       }
       const { profileToken } = req.body;
-      if (!(await profileExists(config, profileToken).catch(() => false))) {
+      const profiles = await savedCameraProfiles(config).catch(() => []);
+      if (!profiles.some((p) => p.token === profileToken)) {
         return reply.code(400).send(noSuchProfile);
       }
       const saved = settings.load();

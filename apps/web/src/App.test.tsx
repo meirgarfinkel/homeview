@@ -78,6 +78,7 @@ it('keeps polling after setup until the server reports it complete', async () =>
     .mockResolvedValueOnce(session(true, { lanUrl: 'https://192.168.1.20:8090' })) // session, done
     .mockResolvedValue(new Response(JSON.stringify({ autostart: null }))); // settings
   await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(await screen.findByRole('button', { name: 'Kasa' }));
   await user.click(await screen.findByRole('button', { name: /already works/ }));
   await user.type(screen.getByLabelText('Kasa email'), 'a@b.c');
   await user.type(screen.getByLabelText('Kasa password'), 'x');

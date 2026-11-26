@@ -6,7 +6,17 @@ import { useHeadingFocus } from './useHeadingFocus';
 
 const RESTART_RETRY_MS = 500;
 
-export function ExistingCamera({ onDone, onBack }: { onDone(): void; onBack(): void }) {
+export function ExistingCamera({
+  onDone,
+  onBack,
+  change = false,
+}: {
+  onDone(): void;
+  onBack(): void;
+  /** Changing the camera after setup, from settings. */
+  change?: boolean;
+}) {
+  const save = change ? api.setup.kasaCamera : api.setup.existingCamera;
   const heading = useHeadingFocus();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -20,12 +30,12 @@ export function ExistingCamera({ onDone, onBack }: { onDone(): void; onBack(): v
     try {
       let result;
       try {
-        result = await api.setup.existingCamera(username, password, alias);
+        result = await save(username, password, alias);
       } catch (err) {
         // The server reloads after the password step, so the first try can miss it.
         if (err instanceof ApiRequestError) throw err;
         await new Promise((resolve) => setTimeout(resolve, RESTART_RETRY_MS));
-        result = await api.setup.existingCamera(username, password, alias);
+        result = await save(username, password, alias);
       }
       if ('saved' in result) onDone();
       else setChoices(result.choose);

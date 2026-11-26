@@ -253,6 +253,12 @@ export interface OnvifCheckResult {
   picked: string;
 }
 
+/** Reply to GET /api/settings/camera-profiles. */
+export interface OnvifProfilesResult {
+  profiles: OnvifProfileInfo[];
+  current?: string;
+}
+
 /** Reply to POST /api/setup/onvif/save. */
 export interface OnvifSaveResult {
   saved: { model?: string; host: string };

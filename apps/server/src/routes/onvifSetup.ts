@@ -286,10 +286,10 @@ export function registerOnvifSetupRoutes(app: FastifyInstance, deps: OnvifSetupD
   );
 }
 
-/** Check that a profile exists on the saved camera. For the settings page. */
-export async function profileExists(config: Config, token: string): Promise<boolean> {
+/** The saved standard camera's playable streams. For the settings page. */
+export async function savedCameraProfiles(config: Config): Promise<OnvifProfileInfo[]> {
   const cam = config.camera.onvif;
-  if (!cam || cam.rtspUrl) return false;
+  if (!cam || cam.rtspUrl) return [];
   const device = await OnvifDevice.connect({
     deviceUrl: deviceUrlFor(cam.host, cam.onvifPort),
     username: cam.username,
@@ -297,7 +297,9 @@ export async function profileExists(config: Config, token: string): Promise<bool
     allowPublicHost: config.camera.allowPublicHost,
     logger: silent,
   });
-  return (await device.profiles()).some(
-    (p) => p.token === token && (p.codec === 'h264' || p.codec === 'h265'),
+  return (await device.profiles()).flatMap((p): OnvifProfileInfo[] =>
+    p.codec === 'h264' || p.codec === 'h265'
+      ? [{ token: p.token, name: p.name, codec: p.codec, width: p.width, height: p.height }]
+      : [],
   );
 }

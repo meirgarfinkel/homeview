@@ -3,6 +3,7 @@ import type { SettingsResponse, SetupCamera } from '@kasa/shared';
 import { api } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { AwayFromHome } from './AwayFromHome';
+import { CameraSection, ChangeCamera } from './CameraSection';
 import { AutostartBox } from './setup/AutostartBox';
 import { Onboarding } from './setup/Onboarding';
 
@@ -268,11 +269,20 @@ export function Settings({
   const [settings, setSettings] = useState<SettingsResponse>();
   const [error, setError] = useState<string>();
   const [onboarding, setOnboarding] = useState(false);
+  const [changing, setChanging] = useState(false);
 
   const load = useCallback(() => {
     api.settings().then(setSettings, (err: unknown) => setError(errorText(err)));
   }, []);
   useEffect(load, [load]);
+
+  if (changing) {
+    const back = () => {
+      setChanging(false);
+      load();
+    };
+    return <ChangeCamera onDone={back} onCancel={back} />;
+  }
 
   if (onboarding && settings) {
     const back = () => {
@@ -288,6 +298,9 @@ export function Settings({
     );
   }
 
+  const cameraFromEnv = settings?.managedByEnv.includes('camera') ?? false;
+  const otherBrand = settings?.camera?.kind === 'onvif';
+
   return (
     <div className="login settings">
       <div className="settings-page">
@@ -301,11 +314,13 @@ export function Settings({
         {settings && (
           <>
             <ViewerPassword fromEnv={settings.managedByEnv.includes('viewerPassword')} />
-            <CameraLogin
-              saved={settings.camera?.username}
-              fromEnv={settings.managedByEnv.includes('camera')}
-            />
-            {settings.local && (
+            {settings.local && settings.camera && !cameraFromEnv && (
+              <CameraSection camera={settings.camera} onChange={() => setChanging(true)} />
+            )}
+            {!otherBrand && (
+              <CameraLogin saved={settings.camera?.username} fromEnv={cameraFromEnv} />
+            )}
+            {settings.local && !otherBrand && (
               <Section title="Set up a new or reset camera">
                 <button
                   className="btn btn-primary"

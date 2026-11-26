@@ -28,6 +28,7 @@ afterEach(() => {
 async function toExistingCamera(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Password'), 'sleepy-owl-42');
   await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(await screen.findByRole('button', { name: 'Kasa' }));
   await user.click(await screen.findByRole('button', { name: /It already works in the Kasa app/ }));
   await screen.findByRole('heading', { name: 'Connect your camera' });
 }
@@ -153,6 +154,7 @@ it('shows the TP-Link links, and each new-camera choice opens its onboarding scr
   render(<SetupWizard onDone={() => {}} />);
   await user.type(screen.getByLabelText('Password'), 'sleepy-owl-42');
   await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(await screen.findByRole('button', { name: 'Kasa' }));
   const link = await screen.findByRole('link', { name: /myproducts\.tp-link\.com/ });
   expect(link.getAttribute('href')).toBe('https://myproducts.tp-link.com');
   expect(link.getAttribute('target')).toBe('_blank');

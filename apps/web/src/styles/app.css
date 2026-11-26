@@ -536,6 +536,17 @@ input[type='text'] {
   padding: 12px 14px;
 }
 
+/* A camera found by the search: its name, then its address in grey. */
+.camera-found {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.camera-found .hint {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .login-card h1:focus {
   outline: none;
 }

@@ -393,6 +393,17 @@ describe('ONVIF setup routes', () => {
       bodies.push(await res.text());
       return res.status;
     };
+    const list = await fetch(`${s.localUrl}/api/settings/camera-profiles`, { headers: { cookie } });
+    const listText = await list.text();
+    bodies.push(listText);
+    expect(list.status).toBe(200);
+    expect(JSON.parse(listText)).toEqual({
+      profiles: [
+        { token: 'main', name: 'Main', codec: 'h264', width: 1920, height: 1080 },
+        { token: 'sub', name: 'Sub', codec: 'h264', width: 640, height: 360 },
+      ],
+      current: 'main',
+    });
     expect(await put('nope')).toBe(400);
     expect(await put('sub')).toBe(204);
     expect(settings.load().camera?.onvif?.profileToken).toBe('sub');
