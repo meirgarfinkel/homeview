@@ -44,6 +44,7 @@ body {
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
@@ -257,7 +258,8 @@ button {
   gap: 12px;
 }
 
-.panel h2 {
+.panel h2,
+.panel h3 {
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -644,11 +646,14 @@ fieldset.field {
 }
 
 .settings {
-  place-items: start center;
+  min-height: 100dvh;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
 }
 
 .settings-page {
-  width: min(480px, 100%);
+  width: min(960px, 100%);
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -657,7 +662,90 @@ fieldset.field {
 .settings-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.settings-nav {
+  display: none;
+}
+
+.settings-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.settings-group-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* A computer: categories down the left, one category at a time on the right. */
+@media (min-width: 901px) {
+  .settings {
+    padding: 48px 24px;
+  }
+
+  .settings-body {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: 24px;
+  }
+
+  .settings-nav-item {
+    text-align: left;
+    padding: 10px 14px;
+    border: 0;
+    border-radius: 10px;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+
+  .settings-nav-item:hover {
+    background: var(--bg-raised);
+    color: var(--text);
+  }
+
+  .settings-nav-item[aria-current='page'] {
+    background: var(--bg-raised);
+    color: var(--text);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .settings-group {
+    display: none;
+  }
+
+  .settings-group.is-active {
+    display: flex;
+  }
+
+  .settings-group-title {
+    font-size: 1.2rem;
+  }
 }
 
 .stack {
@@ -747,6 +835,10 @@ fieldset.field {
   border: 1px solid var(--border);
   border-radius: 10px;
   cursor: pointer;
+}
+
+.quality-option input {
+  accent-color: var(--accent);
 }
 
 .quality-option:has(input:checked) {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { SettingsResponse } from '@kasa/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,7 +54,7 @@ it('shows every section on the desktop computer', async () => {
   await open();
   for (const name of [
     'Viewer password',
-    'Camera',
+    'Camera login',
     'Set up a new or reset camera',
     'Start when this computer starts',
     'Stop HomeView',
@@ -274,5 +274,57 @@ describe('Updates', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByRole('heading', { name: 'Updates' })).toBeNull();
     expect(calls('/api/app/update')).toHaveLength(0);
+  });
+});
+
+describe('Layout', () => {
+  const navNames = () =>
+    within(screen.getByRole('navigation', { name: 'Settings sections' }))
+      .getAllByRole('button')
+      .map((b) => b.textContent);
+  const groupOf = (heading: string) =>
+    screen.getByRole('heading', { level: 2, name: heading }).closest('section.settings-group');
+
+  it('puts an icon-only Back button before the title', async () => {
+    await open();
+    const back = screen.getByRole('button', { name: 'Back' });
+    expect(back.textContent).toBe('');
+    const title = screen.getByRole('heading', { level: 1, name: 'Settings' });
+    expect(back.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('lists Camera, Video, Access and App in the sidebar in the desktop app', async () => {
+    await open();
+    expect(navNames()).toEqual(['Camera', 'Video', 'Access', 'App']);
+    expect(screen.getByRole('button', { name: 'Camera' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(groupOf('Camera')?.classList.contains('is-active')).toBe(true);
+  });
+
+  it('shows the chosen category', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: 'Video' }));
+    expect(screen.getByRole('button', { name: 'Video' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: 'Camera' }).getAttribute('aria-current')).toBeNull();
+    expect(groupOf('Video')?.classList.contains('is-active')).toBe(true);
+    expect(groupOf('Camera')?.classList.contains('is-active')).toBe(false);
+    expect(
+      within(groupOf('Video') as HTMLElement).getByRole('group', { name: 'Video quality' }),
+    ).toBeTruthy();
+  });
+
+  it('leaves out App when not in the desktop app', async () => {
+    await open({ desktop: false, autostart: null });
+    expect(navNames()).toEqual(['Camera', 'Video', 'Access']);
+    expect(screen.queryByRole('heading', { level: 2, name: 'App' })).toBeNull();
+  });
+
+  it('keeps every group in the page for the phone layout', async () => {
+    await open();
+    for (const name of ['Camera', 'Video', 'Access', 'App'])
+      expect(screen.getByRole('heading', { level: 2, name })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Stop HomeView' })).toBeTruthy();
   });
 });

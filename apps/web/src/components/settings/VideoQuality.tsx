@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { SettingsResponse } from '@kasa/shared';
+import type { CameraInfo, SettingsResponse } from '@kasa/shared';
 import { api } from '../../lib/api';
 import { errorText } from '../../lib/errors';
 
@@ -45,7 +45,7 @@ export function VideoQuality({ saved, fromEnv }: { saved: Value; fromEnv: boolea
   useEffect(() => {
     let live = true;
     api.camera().then(
-      (c) => live && setTop(c.resolution),
+      (c: CameraInfo | undefined) => live && setTop(c?.resolution),
       () => undefined, // without it, 2K is offered only when it's already saved
     );
     return () => {

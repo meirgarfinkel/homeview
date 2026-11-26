@@ -120,7 +120,7 @@ export function AwayFromHome() {
 
   return (
     <section className="panel">
-      <h2>Away from home</h2>
+      <h3>Away from home</h3>
       {status && (
         <>
           <label className="check">
