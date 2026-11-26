@@ -2,7 +2,9 @@ import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BinaryKind, type StreamState } from '@kasa/shared';
 import { accessUnits } from '../src/dev/fakeCamera.js';
-import type { MediaFrame } from '../src/kasa/cameraSource.js';
+import type { MediaFrame, VideoCodec } from '../src/camera/driver.js';
+import { h265AccessUnits, h265NalType } from '../src/media/h265.js';
+import { splitAnnexB } from '../src/media/h264.js';
 import { LiveHub, type FrameSource, type Viewer } from '../src/media/liveHub.js';
 import { boxes, fixture, silentLogger } from './helpers.js';
 
@@ -10,8 +12,8 @@ class FakeSource extends EventEmitter implements FrameSource {
   state: StreamState = 'idle';
   start = vi.fn();
   stop = vi.fn();
-  video(data: Buffer, timestamp: number) {
-    this.emit('frame', { kind: 'video', codec: 'h264', data, timestamp } satisfies MediaFrame);
+  video(data: Buffer, timestamp: number, codec: VideoCodec = 'h264') {
+    this.emit('frame', { kind: 'video', codec, data, timestamp } satisfies MediaFrame);
   }
   audio(data: Buffer) {
     this.emit('frame', {
@@ -161,5 +163,72 @@ describe('LiveHub', () => {
     source.emit('state', 'error', 'bad password');
     expect(viewer.json.at(-1)).toEqual({ type: 'status', state: 'error', detail: 'bad password' });
     expect(hub.stats().state).toBe('error');
+  });
+
+  describe('H.265', () => {
+    const hevc = h265AccessUnits(fixture('clip-320x180.h265')); // IRAP every 15 frames
+    const isParameterSet = (n: Buffer) => [32, 33, 34].includes(h265NalType(n));
+    const withoutParameterSets = (unit: Buffer) =>
+      Buffer.concat(
+        splitAnnexB(unit)
+          .filter((n) => !isParameterSet(n))
+          .flatMap((n) => [Buffer.from([0, 0, 0, 1]), n]),
+      );
+
+    it('an H.265 source produces a codec message with an hvc1 type and keyframe-aligned fragments', () => {
+      const { source, hub } = setup();
+      const viewer = new RecordingViewer();
+      hub.addViewer(viewer);
+      for (let i = 0; i < 20; i++) source.video(hevc[i]!, i / 15, 'h265');
+
+      const codec = viewer.json.find((m) => m['type'] === 'codec') as {
+        video: { mimeType: string; width: number; height: number };
+      };
+      expect(codec.video).toMatchObject({ width: 320, height: 180 });
+      expect(codec.video.mimeType).toMatch(/^video\/mp4; codecs="hvc1\.1\./);
+      expect(viewer.kinds()[0]).toBe(BinaryKind.VideoInit);
+      expect(viewer.binary[0]!.indexOf('hvcC', 0, 'latin1')).toBeGreaterThan(0);
+      expect(viewer.kinds().filter((k) => k === BinaryKind.VideoFragment)).toHaveLength(19);
+      // The first fragment is a sync sample.
+      const first = viewer.binary[1]!.subarray(1);
+      const trun = first.indexOf('trun', 0, 'latin1');
+      // type, version+flags, sample_count, data_offset, duration, size, then sample_flags
+      expect(first.readUInt32BE(trun + 24)).toBe(0x02000000);
+    });
+
+    it('parameter sets given only once, before the first IRAP, still start the stream for a viewer who joins later', () => {
+      const { source, hub } = setup();
+      hub.addViewer(new RecordingViewer());
+      source.video(hevc[0]!, 0, 'h265');
+      for (let i = 1; i < 20; i++) source.video(withoutParameterSets(hevc[i]!), i / 15, 'h265');
+
+      const late = new RecordingViewer();
+      hub.addViewer(late);
+      expect(late.json.some((m) => m['type'] === 'codec')).toBe(true);
+      expect(late.kinds()[0]).toBe(BinaryKind.VideoInit);
+      expect(
+        late
+          .kinds()
+          .slice(1)
+          .every((k) => k === BinaryKind.VideoFragment),
+      ).toBe(true);
+      expect(late.kinds().length).toBeGreaterThan(1);
+    });
+
+    it('a switch from H.264 to H.265 sends a new codec message and init segment', () => {
+      const { source, hub } = setup();
+      const viewer = new RecordingViewer();
+      hub.addViewer(viewer);
+      feed(source, 0, 5);
+      for (let i = 0; i < 5; i++) source.video(hevc[i]!, 1 + i / 15, 'h265');
+
+      const codecs = viewer.json
+        .filter((m) => m['type'] === 'codec')
+        .map((m) => (m as { video: { mimeType: string } }).video.mimeType);
+      expect(codecs).toHaveLength(2);
+      expect(codecs[0]).toMatch(/avc1/);
+      expect(codecs[1]).toMatch(/hvc1/);
+      expect(viewer.kinds().filter((k) => k === BinaryKind.VideoInit)).toHaveLength(2);
+    });
   });
 });

@@ -1,9 +1,10 @@
 import { BinaryKind, type CodecMessage, type StreamState, type StreamStats } from '@kasa/shared';
-import type { FrameSource, MediaFrame } from '../camera/driver.js';
+import type { FrameSource, MediaFrame, VideoCodec } from '../camera/driver.js';
 import { AUDIO_SAMPLE_RATE } from '../kasa/cameraSource.js';
 import type { Logger } from '../logger.js';
 import { initSegment, mediaFragment, mimeType, VIDEO_TIMESCALE } from './fmp4.js';
 import { NalType, nalType, parseSps, splitAnnexB, toAvcc } from './h264.js';
+import { H265NalType, h265NalType, isH265Keyframe, parseH265Sps } from './h265.js';
 
 /**
  * Fans one camera connection out to any number of browser viewers.
@@ -50,6 +51,51 @@ export interface LiveHubOptions {
   maxGopBytes?: number;
 }
 
+interface ParameterSets {
+  codec: VideoCodec;
+  vps?: Buffer | undefined;
+  sps?: Buffer | undefined;
+  pps?: Buffer | undefined;
+}
+
+function sameSets(a: ParameterSets, b: ParameterSets): boolean {
+  const same = (x: Buffer | undefined, y: Buffer | undefined) =>
+    x === undefined ? y === undefined : y !== undefined && x.equals(y);
+  return a.codec === b.codec && same(a.vps, b.vps) && same(a.sps, b.sps) && same(a.pps, b.pps);
+}
+
+type NalRole = 'vps' | 'sps' | 'pps' | 'skip' | 'keyframe' | 'sample';
+
+/** What a NAL unit is for the muxer: a parameter set, a delimiter to drop, or sample data. */
+function classify(codec: VideoCodec, nal: Buffer): NalRole {
+  if (codec === 'h264') {
+    switch (nalType(nal)) {
+      case NalType.Sps:
+        return 'sps';
+      case NalType.Pps:
+        return 'pps';
+      case NalType.AccessUnitDelimiter:
+        return 'skip';
+      case NalType.IdrSlice:
+        return 'keyframe';
+      default:
+        return 'sample';
+    }
+  }
+  switch (h265NalType(nal)) {
+    case H265NalType.VPS:
+      return 'vps';
+    case H265NalType.SPS:
+      return 'sps';
+    case H265NalType.PPS:
+      return 'pps';
+    case H265NalType.AUD:
+      return 'skip';
+    default:
+      return isH265Keyframe([nal]) ? 'keyframe' : 'sample';
+  }
+}
+
 /** Prefix a payload with its one-byte BinaryKind tag. */
 export function tagFrame(kind: BinaryKind, payload: Buffer): Buffer {
   const out = Buffer.allocUnsafe(payload.length + 1);
@@ -73,10 +119,10 @@ export class LiveHub {
   private stateDetail: string | undefined;
 
   // Video track state
-  private sps: Buffer | undefined;
-  private pps: Buffer | undefined;
-  private seenSps: Buffer | undefined;
-  private seenPps: Buffer | undefined;
+  /** The parameter sets the current init segment was built from. */
+  private active: ParameterSets | undefined;
+  /** The latest parameter sets seen in the stream, per codec. */
+  private seen: ParameterSets | undefined;
   private codec: CodecMessage | undefined;
   /** Tagged init segment, ready to send. */
   private init: Buffer | undefined;
@@ -195,37 +241,28 @@ export class LiveHub {
     }
     this.recordStats(frame.data.length);
 
-    const nals = splitAnnexB(frame.data);
+    const { codec } = frame;
+    if (this.seen?.codec !== codec) this.seen = { codec };
+    const seen = this.seen;
     let keyframe = false;
+    let changed = false;
     const sampleNals: Buffer[] = [];
-    let newSps: Buffer | undefined;
-    let newPps: Buffer | undefined;
-    for (const nal of nals) {
+    for (const nal of splitAnnexB(frame.data)) {
       if (nal.length === 0) continue;
-      switch (nalType(nal)) {
-        case NalType.Sps:
-          newSps = nal;
-          break;
-        case NalType.Pps:
-          newPps = nal;
-          break;
-        case NalType.AccessUnitDelimiter:
-          break;
-        case NalType.IdrSlice:
-          keyframe = true;
-          sampleNals.push(nal);
-          break;
-        default:
-          sampleNals.push(nal);
+      const role = classify(codec, nal);
+      if (role === 'vps' || role === 'sps' || role === 'pps') {
+        seen[role] = nal;
+        changed = true;
+      } else if (role === 'sample' || role === 'keyframe') {
+        if (role === 'keyframe') keyframe = true;
+        sampleNals.push(nal);
       }
     }
 
-    // SPS and PPS normally travel together in the keyframe's access unit, but
-    // don't depend on it.
-    if (newSps) this.seenSps = newSps;
-    if (newPps) this.seenPps = newPps;
-    if ((newSps || newPps) && this.seenSps && this.seenPps) {
-      this.updateParameterSets(this.seenSps, this.seenPps);
+    // Parameter sets normally travel with the keyframe's access unit, but
+    // don't depend on it: some cameras send them once, or only in the SDP.
+    if (changed && seen.sps && seen.pps && (codec === 'h264' || seen.vps)) {
+      this.updateParameterSets(seen);
     }
     if (!this.init || sampleNals.length === 0) return;
     if (this.waitingForKeyframe) {
@@ -280,20 +317,32 @@ export class LiveHub {
     this.broadcastVideo(fragment, sample.keyframe);
   }
 
-  private updateParameterSets(sps: Buffer, pps: Buffer): void {
-    if (this.sps?.equals(sps) && this.pps?.equals(pps)) return;
-    let info;
+  private updateParameterSets(sets: ParameterSets): void {
+    if (this.active && sameSets(this.active, sets)) return;
+    let info: { width: number; height: number; codec: string };
     try {
-      info = parseSps(sps);
+      info = sets.codec === 'h264' ? parseSps(sets.sps!) : parseH265Sps(sets.sps!);
     } catch (err) {
       this.opts.logger.warn({ err: (err as Error).message }, 'Could not parse SPS');
       return;
     }
-    this.sps = Buffer.from(sps);
-    this.pps = Buffer.from(pps);
+    const copy = (b: Buffer | undefined) => (b ? Buffer.from(b) : undefined);
+    this.active = {
+      codec: sets.codec,
+      vps: copy(sets.vps),
+      sps: copy(sets.sps),
+      pps: copy(sets.pps),
+    };
+    const { width, height } = info;
+    const sps = [this.active.sps!];
+    const pps = [this.active.pps!];
     this.init = tagFrame(
       BinaryKind.VideoInit,
-      initSegment({ width: info.width, height: info.height, sps: [this.sps], pps: [this.pps] }),
+      initSegment(
+        sets.codec === 'h264'
+          ? { codec: 'h264', width, height, sps, pps }
+          : { codec: 'h265', width, height, vps: [this.active.vps!], sps, pps },
+      ),
     );
     this.codec = {
       type: 'codec',
@@ -306,6 +355,7 @@ export class LiveHub {
     );
     // Any queued frame belongs to the old format.
     this.pending = undefined;
+    this.waitingForKeyframe = true;
     this.gop = [];
     this.gopBytes = 0;
     for (const state of this.viewers.values()) {
