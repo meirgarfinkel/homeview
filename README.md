@@ -178,10 +178,15 @@ viewer password, because Kasa Home won't turn this on without one.
 4. **Add a phone.** Settings now shows your address, for example
    `https://kasa-home.tail1234.ts.net`, and an "Add a phone" button. Click it
    and scan the code with the phone's camera. The code works once and
-   expires after 10 minutes. The phone opens the camera.
+   expires after 10 minutes. The phone opens the camera. The first time, the
+   address can take a few minutes to start working. If the phone can't reach
+   it, wait a few minutes and scan a new code.
 
 Steps 2 and 3 happen once. After that, Kasa Home reconnects by itself when
-it starts. A phone that is already signed in at home can do step 4 without
+it starts. Tailscale asks you to sign in again every few months, when the
+computer's key expires. To avoid that, open the Machines page in the
+[Tailscale admin console](https://login.tailscale.com/admin/machines), open
+the menu for the `kasa-home` machine and choose "Disable key expiry". A phone that is already signed in at home can do step 4 without
 the computer. Open its Settings and tap "Use this phone away from home".
 
 The address works at home and away, so a phone needs only one bookmark. Use
@@ -215,7 +220,9 @@ and any live view it has open closes.
 sharing the address. Your paired phones are kept, so turning it back on needs
 no new scans. To also forget the Tailscale login, click "Sign out of
 Tailscale", the small link in that section, while it is on. That turns it off
-too. You then sign in to Tailscale again the next time you turn it on.
+too. You then sign in to Tailscale again the next time you turn it on. The
+address may change after that, for example to `kasa-home-1`, and your phones
+may need to scan a new code.
 
 If the section shows a problem, click "Try again".
 

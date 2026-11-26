@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PairCodeResponse, RemoteDevice, RemotePhase, RemoteStatus } from '@kasa/shared';
 import { api } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { qrSvg } from '../lib/qr';
 
+/** How often to ask while the helper works through its steps. */
 const POLL_MS = 2000;
 const POLLING: RemotePhase[] = ['starting', 'sign-in', 'approve'];
+/** How often to ask while on, to see new phones and a helper that stopped. */
+const ON_POLL_MS = 5000;
+const SIGN_OUT_WARNING =
+  'Sign out of Tailscale? Your phones may need to scan a new code afterwards.';
 /** Phases where the Tailscale login exists, so signing out means something. */
 const SIGNED_IN: RemotePhase[] = ['approve', 'on', 'problem'];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,26 +38,50 @@ export function AwayFromHome() {
   const [status, setStatus] = useState<RemoteStatus>();
   const [error, setError] = useState<string>();
   const [pairing, setPairing] = useState<PairCodeResponse>();
+  /** The phone that paired with the last code shown. */
+  const [added, setAdded] = useState<string>();
+  /** The devices there were when the code was shown, so a new one can be spotted. */
+  const knownIds = useRef<string[]>(undefined);
+
+  const hideCode = useCallback(() => {
+    knownIds.current = undefined;
+    setPairing(undefined);
+  }, []);
 
   const load = useCallback(async () => {
     try {
-      setStatus(await api.remote.status());
+      const next = await api.remote.status();
+      setStatus(next);
+      const known = knownIds.current;
+      const fresh = known && next.devices.find((d) => !known.includes(d.id));
+      if (fresh) {
+        hideCode();
+        setAdded(fresh.name);
+      }
     } catch (err) {
       setError(errorText(err));
     }
-  }, []);
+  }, [hideCode]);
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Ask again while the helper is working through its steps. Stops when the phase moves on
-  // and when this section goes away.
+  // Ask again while the helper is working through its steps, and less often while on. Stops
+  // when remote access is off or has a problem, and when this section goes away.
   const phase = status?.phase;
+  const pollMs = phase === 'on' ? ON_POLL_MS : phase && POLLING.includes(phase) ? POLL_MS : 0;
   useEffect(() => {
-    if (!phase || !POLLING.includes(phase)) return;
-    const timer = setInterval(() => void load(), POLL_MS);
+    if (!pollMs) return;
+    const timer = setInterval(() => void load(), pollMs);
     return () => clearInterval(timer);
-  }, [phase, load]);
+  }, [pollMs, load]);
+
+  // A code that has expired can't pair anything, so stop showing it.
+  useEffect(() => {
+    if (!pairing) return;
+    const timer = setTimeout(hideCode, Math.max(0, Date.parse(pairing.expiresAt) - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pairing, hideCode]);
 
   /** Runs one action, shows its failure, then re-reads the status. */
   const act = async (action: () => Promise<unknown>) => {
@@ -66,14 +95,18 @@ export function AwayFromHome() {
   };
 
   const setOn = (on: boolean) => {
-    setPairing(undefined);
+    hideCode();
+    setAdded(undefined);
     return act(() => api.remote.enable(on));
   };
 
   const addPhone = async () => {
     setError(undefined);
+    setAdded(undefined);
     try {
-      setPairing(await api.remote.pairCode());
+      const code = await api.remote.pairCode();
+      knownIds.current = status?.devices.map((d) => d.id) ?? [];
+      setPairing(code);
     } catch (err) {
       setError(errorText(err));
     }
@@ -131,6 +164,10 @@ export function AwayFromHome() {
                   Add a phone
                 </button>
               </div>
+              <p className="hint">
+                The first time, the address can take a few minutes to start working.
+              </p>
+              {added && <p role="status">Added {added}.</p>}
               {pairing && (
                 <div className="stack">
                   <p>
@@ -187,7 +224,9 @@ export function AwayFromHome() {
               className="link small-link"
               type="button"
               onClick={() => {
-                setPairing(undefined);
+                if (!window.confirm(SIGN_OUT_WARNING)) return;
+                hideCode();
+                setAdded(undefined);
                 void act(api.remote.signOut);
               }}
             >

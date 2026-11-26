@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { RemoteStatus } from '@kasa/shared';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -123,11 +123,31 @@ it('tries again by turning off and on', async () => {
   expect(bodies).toEqual([{ on: false }, { on: true }]);
 });
 
-it('signs out of Tailscale', async () => {
+it('signs out of Tailscale once the user agrees', async () => {
   const user = userEvent.setup();
+  const confirm = vi.fn(() => true);
+  vi.stubGlobal('confirm', confirm);
   await show({ phase: 'problem', message: 'Stopped.' });
   await user.click(screen.getByRole('button', { name: 'Sign out of Tailscale' }));
+  expect(confirm).toHaveBeenCalledWith(
+    'Sign out of Tailscale? Your phones may need to scan a new code afterwards.',
+  );
   expect(calls('/api/remote/sign-out', 'POST')).toHaveLength(1);
+});
+
+it('stays signed in when the user says no', async () => {
+  const user = userEvent.setup();
+  vi.stubGlobal('confirm', () => false);
+  await show({ phase: 'on', url: 'https://kasa-home.ts.net' });
+  await user.click(screen.getByRole('button', { name: 'Sign out of Tailscale' }));
+  expect(calls('/api/remote/sign-out', 'POST')).toHaveLength(0);
+});
+
+it('warns that the address can take a few minutes the first time', async () => {
+  await show({ phase: 'on', url: 'https://kasa-home.ts.net' });
+  expect(
+    screen.getByText('The first time, the address can take a few minutes to start working.'),
+  ).toBeTruthy();
 });
 
 it('polls every 2 seconds while starting, and stops on unmount', async () => {
@@ -146,12 +166,55 @@ it('polls every 2 seconds while starting, and stops on unmount', async () => {
   expect(reads()).toBe(first + 2);
 });
 
-it('does not poll once on', async () => {
+it('polls every 5 seconds once on', async () => {
   vi.useFakeTimers();
   status = { ...base, phase: 'on', url: 'https://kasa-home.ts.net' };
   render(<AwayFromHome />);
   await act(() => vi.advanceTimersByTimeAsync(0));
   const first = calls('/api/remote').length;
-  await act(() => vi.advanceTimersByTimeAsync(10_000));
+  await act(() => vi.advanceTimersByTimeAsync(4999));
   expect(calls('/api/remote')).toHaveLength(first);
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(calls('/api/remote')).toHaveLength(first + 1);
+  await act(() => vi.advanceTimersByTimeAsync(5000));
+  expect(calls('/api/remote')).toHaveLength(first + 2);
+});
+
+const SCAN = "Scan this with the phone's camera. The code works once, for 10 minutes.";
+const iPhone = { id: 'd1', name: 'iPhone', createdAt: '2026-11-20T10:00:00Z' };
+
+/** Shows the section while on, with fake timers, and opens a pairing code. */
+const showCode = async () => {
+  vi.useFakeTimers();
+  // The fake pairing code expires at 12:00.
+  vi.setSystemTime(new Date('2026-11-26T11:55:00Z'));
+  status = { ...base, phase: 'on', url: 'https://kasa-home.ts.net', devices: [iPhone] };
+  render(<AwayFromHome />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  fireEvent.click(screen.getByRole('button', { name: 'Add a phone' }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(screen.getByText(SCAN)).toBeTruthy();
+};
+
+it('hides the code and names the phone once it pairs', async () => {
+  await showCode();
+  await act(() => vi.advanceTimersByTimeAsync(5000));
+  expect(screen.getByText(SCAN)).toBeTruthy();
+  status = {
+    ...status,
+    devices: [iPhone, { id: 'd2', name: 'Android phone', createdAt: '2026-11-26T11:56:00Z' }],
+  };
+  await act(() => vi.advanceTimersByTimeAsync(5000));
+  expect(screen.queryByText(SCAN)).toBeNull();
+  expect(screen.queryByRole('img', { name: 'Pairing code' })).toBeNull();
+  expect(screen.getByText('Added Android phone.')).toBeTruthy();
+});
+
+it('hides the code when it expires', async () => {
+  await showCode();
+  await act(() => vi.advanceTimersByTimeAsync(4 * 60_000));
+  expect(screen.getByText(SCAN)).toBeTruthy();
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(screen.queryByText(SCAN)).toBeNull();
+  expect(screen.queryByText(/^Added/)).toBeNull();
 });
