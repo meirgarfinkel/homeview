@@ -65,6 +65,14 @@ afterEach(() => {
 });
 
 describe('LiveHub', () => {
+  it('reports the video size once it knows it', () => {
+    const onVideoSize = vi.fn();
+    const { source, hub } = setup({ onVideoSize });
+    hub.addViewer(new RecordingViewer());
+    feed(source, 0, 10);
+    expect(onVideoSize).toHaveBeenCalledWith(320, 180);
+  });
+
   it('starts the camera on the first viewer and stops it after the idle timeout', () => {
     vi.useFakeTimers();
     const { source, hub } = setup();

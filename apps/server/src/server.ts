@@ -10,6 +10,7 @@ import type { DiscoveredDevice } from './kasa/discovery.js';
 import { listenHttp, listenHttpsWithRedirect, type DualListener } from './listen.js';
 import { createLogger, type Logger } from './logger.js';
 import { LiveHub } from './media/liveHub.js';
+import { defaultSizeToSave } from './settings/defaultSize.js';
 import { RemoteAccess } from './remote/remoteAccess.js';
 import { loadOrCreateSecret } from './security/dataDir.js';
 import {
@@ -238,6 +239,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           source: camera.source,
           logger: logger.child({ component: 'hub' }),
           idleTimeoutMs: config.idleDisconnectMs,
+          onVideoSize: (width, height) => {
+            const saved = settings.load();
+            const size = defaultSizeToSave(config, saved, width, height);
+            if (size) settings.save({ ...saved, cameraDefaultSize: size });
+          },
         });
       } catch (err) {
         cameraError = (err as Error).message;

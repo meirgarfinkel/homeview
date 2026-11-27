@@ -50,6 +50,8 @@ export interface LiveHubOptions {
   logger: Logger;
   /** Keep the camera connected this long after the last viewer leaves. */
   idleTimeoutMs?: number;
+  /** Called with the picture size whenever the video format is detected. */
+  onVideoSize?: (width: number, height: number) => void;
   /** A viewer with more than this many bytes queued starts losing frames. */
   maxViewerBufferBytes?: number;
   /** Upper bound for the cached GOP. */
@@ -377,6 +379,7 @@ export class LiveHub {
       { codec: info.codec, width: info.width, height: info.height },
       'Video format detected',
     );
+    this.opts.onVideoSize?.(info.width, info.height);
     // Any queued frame belongs to the old format.
     this.pending = undefined;
     this.waitingForKeyframe = true;
