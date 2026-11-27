@@ -4,14 +4,7 @@ import type { StreamState } from '@kasa/shared';
 import { useLiveStream } from '../hooks/useLiveStream';
 import { usePolling } from '../hooks/usePolling';
 import { api } from '../lib/api';
-import {
-  CameraIcon,
-  FullscreenIcon,
-  PopOutIcon,
-  SettingsIcon,
-  SoundOffIcon,
-  SoundOnIcon,
-} from './Icons';
+import { CameraIcon, PopOutIcon, SettingsIcon, SoundOffIcon, SoundOnIcon } from './Icons';
 import { LiveStage } from './LiveStage';
 import { PtzPad } from './PtzPad';
 import { SoundMeter } from './SoundMeter';
@@ -73,8 +66,19 @@ export function Monitor({
   useEffect(() => localStorageSet('soundThreshold', String(sensitivity)), [sensitivity]);
 
   const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void stageRef.current?.requestFullscreen?.();
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    const stage = stageRef.current;
+    if (stage && typeof stage.requestFullscreen === 'function') {
+      void stage.requestFullscreen().catch(() => undefined);
+      return;
+    }
+    // An iPhone can't make a box fullscreen, only its own video player.
+    const video = videoRef.current as
+      (HTMLVideoElement & { webkitEnterFullscreen?(): void }) | null;
+    video?.webkitEnterFullscreen?.();
   }, []);
 
   const togglePip = useCallback(() => {
@@ -113,7 +117,6 @@ export function Monitor({
 
   const ptz = status?.ptz;
   const showPtz = ptz !== 'unsupported' && ptz !== 'disabled';
-  const stats = status?.stream;
 
   return (
     <div className={`app${soundActive ? ' sound-active' : ''}`}>
@@ -136,6 +139,27 @@ export function Monitor({
             <span className="dot" />
             {live.connection === 'open' ? STATE_LABEL[live.stream] : 'Offline'}
           </span>
+          <button
+            type="button"
+            className="btn btn-icon"
+            aria-label="Snapshot"
+            title="Snapshot"
+            onClick={snapshot}
+            disabled={!isLive}
+          >
+            <CameraIcon />
+          </button>
+          {'pictureInPictureEnabled' in document && (
+            <button
+              type="button"
+              className="btn btn-icon"
+              aria-label="Pop out"
+              title="Pop out"
+              onClick={togglePip}
+            >
+              <PopOutIcon />
+            </button>
+          )}
           {onOpenSettings && (
             <button
               type="button"
@@ -156,21 +180,8 @@ export function Monitor({
       </header>
 
       <main className="layout">
-        <LiveStage
-          live={live}
-          videoRef={videoRef}
-          stageRef={stageRef}
-          onDoubleClick={toggleFullscreen}
-        >
+        <LiveStage live={live} videoRef={videoRef} stageRef={stageRef} onTap={toggleFullscreen}>
           {soundActive && <div className="sound-badge">Sound detected</div>}
-          {stats?.width && (
-            <div className="stage-meta">
-              {stats.width}×{stats.height}
-              {stats.fps ? ` · ${stats.fps} fps` : ''}
-              {stats.kbps ? ` · ${stats.kbps} kb/s` : ''}
-              {stats.viewers > 1 ? ` · ${stats.viewers} viewers` : ''}
-            </div>
-          )}
         </LiveStage>
 
         <aside className="side">
@@ -226,24 +237,6 @@ export function Monitor({
 
           {showPtz && <PtzPad onError={setPtzError} />}
           {ptzError && <p className="error-text">{ptzError}</p>}
-
-          <section className="panel">
-            <h2>View</h2>
-            <div className="row wrap">
-              <button type="button" className="btn" onClick={toggleFullscreen}>
-                <FullscreenIcon /> Fullscreen
-              </button>
-              {'pictureInPictureEnabled' in document && (
-                <button type="button" className="btn" onClick={togglePip}>
-                  <PopOutIcon /> Pop out
-                </button>
-              )}
-              <button type="button" className="btn" onClick={snapshot} disabled={!isLive}>
-                <CameraIcon /> Snapshot
-              </button>
-            </div>
-            <p className="hint">Shortcuts: F fullscreen · M sound · arrows pan</p>
-          </section>
         </aside>
       </main>
     </div>

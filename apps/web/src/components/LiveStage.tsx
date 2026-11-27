@@ -20,18 +20,19 @@ export function LiveStage({
   live,
   videoRef,
   stageRef,
-  onDoubleClick,
+  onTap,
   children,
 }: {
   live: LiveStream;
   videoRef: RefObject<HTMLVideoElement | null>;
   stageRef?: RefObject<HTMLDivElement | null>;
-  onDoubleClick?: () => void;
+  /** A tap or click on the picture. */
+  onTap?: () => void;
   children?: ReactNode;
 }) {
   const overlay = overlayFor(live);
   return (
-    <div className="stage" ref={stageRef} onDoubleClick={onDoubleClick}>
+    <div className={`stage${onTap ? ' stage-tap' : ''}`} ref={stageRef} onClick={onTap}>
       <video ref={videoRef} muted playsInline autoPlay disablePictureInPicture={false} />
       {overlay && (
         <div className={`overlay overlay-${overlay.tone}`}>

@@ -140,6 +140,39 @@ button {
   .layout {
     grid-template-columns: 1fr;
   }
+
+  /* Every bit of a phone's width goes to the picture. */
+  .layout .stage {
+    margin: 0 -16px;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+}
+
+/* A narrow phone: the camera's name gets its own row, the buttons go below it. */
+@media (max-width: 600px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .brand {
+    flex: 1 1 100%;
+  }
+
+  .topbar-right {
+    width: 100%;
+  }
+
+  .topbar-right .link {
+    margin-left: auto;
+  }
+}
+
+/* A slider takes sideways drags; up and down still scrolls the page. */
+input[type='range'] {
+  touch-action: pan-y;
 }
 
 /* ---------- video stage ---------- */
@@ -152,6 +185,10 @@ button {
   border: 1px solid var(--border);
   aspect-ratio: 16 / 9;
   transition: box-shadow 0.3s;
+}
+
+.stage-tap {
+  cursor: pointer;
 }
 
 .stage:fullscreen {
@@ -225,19 +262,6 @@ button {
   50% {
     opacity: 0.6;
   }
-}
-
-.stage-meta {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  padding: 3px 9px;
-  border-radius: 8px;
-  background: rgb(0 0 0 / 0.45);
-  color: var(--text-dim);
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
 }
 
 /* ---------- side panels ---------- */
@@ -457,12 +481,13 @@ input[type='text'] {
   grid-template-rows: repeat(3, 40px);
   gap: 4px;
   justify-content: center;
-  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
 .ptz-btn {
+  /* A vertical swipe scrolls the page; PtzPad waits before moving on touch. */
+  touch-action: pan-y;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-sunken);
