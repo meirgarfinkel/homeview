@@ -5,6 +5,8 @@ import { ArrowIcon } from './Icons';
 
 /** A press longer than this turns from a single step into continuous motion. */
 const HOLD_AFTER_MS = 350;
+/** A touch waits this long before moving, so a swipe that starts on an arrow can scroll the page. */
+const TOUCH_DELAY_MS = 150;
 /** While held, renew the hold this often (the server stops if renewals stop). */
 const RENEW_MS = 400;
 
@@ -34,6 +36,17 @@ export function PtzPad({ onError }: Props) {
   const [active, setActive] = useState<PtzDirection>();
   const [presets, setPresets] = useState<PtzPreset[]>([]);
   const press = useRef<Press | undefined>(undefined);
+  /** A touch that hasn't started moving the camera yet. */
+  const pendingTouch = useRef<{ dir: PtzDirection; timer: ReturnType<typeof setTimeout> }>(
+    undefined,
+  );
+
+  const dropPendingTouch = useCallback(() => {
+    const pending = pendingTouch.current;
+    if (pending) clearTimeout(pending.timer);
+    pendingTouch.current = undefined;
+    return pending;
+  }, []);
 
   const report = useCallback(
     (err: unknown) => onError(err instanceof Error ? err.message : String(err)),
@@ -95,9 +108,10 @@ export function PtzPad({ onError }: Props) {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', release);
+      dropPendingTouch();
       release();
     };
-  }, [begin, release]);
+  }, [begin, release, dropPendingTouch]);
 
   const button = (dir: PtzDirection) => (
     <button
@@ -105,11 +119,31 @@ export function PtzPad({ onError }: Props) {
       className={`ptz-btn ptz-${dir}${active === dir ? ' active' : ''}`}
       aria-label={`Pan ${dir}`}
       onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId);
+        if (e.pointerType === 'touch') {
+          dropPendingTouch();
+          pendingTouch.current = {
+            dir,
+            timer: setTimeout(() => {
+              pendingTouch.current = undefined;
+              begin(dir);
+            }, TOUCH_DELAY_MS),
+          };
+          return;
+        }
+        e.currentTarget.setPointerCapture?.(e.pointerId);
         begin(dir);
       }}
-      onPointerUp={release}
-      onPointerCancel={release}
+      onPointerUp={() => {
+        // A quick tap ends before the delay: it still moves one step.
+        const pending = dropPendingTouch();
+        if (pending) begin(pending.dir);
+        release();
+      }}
+      onPointerCancel={() => {
+        // The browser took the touch for scrolling.
+        dropPendingTouch();
+        release();
+      }}
       onLostPointerCapture={release}
       onContextMenu={(e) => e.preventDefault()}
     >

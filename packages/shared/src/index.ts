@@ -149,6 +149,8 @@ export interface SettingsResponse {
    * default. The environment may also give 360P.
    */
   streamResolution: StreamResolution | '360P' | null;
+  /** The size the camera sends at its default, as "1280x720". Null until HomeView has seen it. */
+  cameraDefaultSize: string | null;
   /** Settings that environment variables set, which the page shows as read-only. */
   managedByEnv: ('viewerPassword' | 'camera' | 'streamResolution')[];
 }

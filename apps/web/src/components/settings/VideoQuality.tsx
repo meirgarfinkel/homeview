@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CameraInfo, SettingsResponse } from '@kasa/shared';
+import { usePolling } from '../../hooks/usePolling';
 import { api } from '../../lib/api';
 import { errorText } from '../../lib/errors';
 
@@ -20,9 +21,20 @@ interface Option {
   size?: string;
 }
 
-function optionsFor(top: string | undefined, saved: Value): Option[] {
+/** "1280x720" → "720p", a 2K size → "2K", anything else → "W×H". */
+export function sizeName(size: string): string {
+  if (TWO_K.includes(size)) return '2K';
+  const [w, h] = size.split('x');
+  const named: Record<string, string> = { '360': '360p', '720': '720p', '1080': '1080p' };
+  return (h && named[h]) ?? `${w}×${h}`;
+}
+
+function optionsFor(top: string | undefined, saved: Value, defaultSize: string | null): Option[] {
   const options: Option[] = [
-    { value: null, label: 'Camera default' },
+    {
+      value: null,
+      label: defaultSize ? `Camera default (${sizeName(defaultSize)})` : 'Camera default',
+    },
     { value: '720P', label: '720p', size: SIZES['720P'] },
     { value: '1080P', label: '1080p', size: SIZES['1080P'] },
   ];
@@ -35,7 +47,18 @@ function optionsFor(top: string | undefined, saved: Value): Option[] {
 }
 
 /** Choose the stream size. Saving reloads the server, which restarts the stream. */
-export function VideoQuality({ saved, fromEnv }: { saved: Value; fromEnv: boolean }) {
+export function VideoQuality({
+  saved,
+  fromEnv,
+  defaultSize,
+}: {
+  saved: Value;
+  fromEnv: boolean;
+  /** What the camera sends at its default, as "1280x720", once HomeView has seen it. */
+  defaultSize: string | null;
+}) {
+  const { data: status } = usePolling(api.status, 5000);
+  const stream = status?.stream;
   const [top, setTop] = useState<string>();
   const [value, setValue] = useState<Value>(saved);
   const [busy, setBusy] = useState(false);
@@ -74,7 +97,7 @@ export function VideoQuality({ saved, fromEnv }: { saved: Value; fromEnv: boolea
     <div className="stack">
       <fieldset className="quality-list" disabled={fromEnv || busy}>
         <legend className="visually-hidden">Video quality</legend>
-        {optionsFor(top, saved).map((o) => (
+        {optionsFor(top, saved, defaultSize).map((o) => (
           <label key={o.value ?? 'default'} className="quality-option">
             <input
               type="radio"
@@ -89,6 +112,14 @@ export function VideoQuality({ saved, fromEnv }: { saved: Value; fromEnv: boolea
         ))}
       </fieldset>
       <p className="hint">Higher looks sharper and uses more data.</p>
+      {stream?.state === 'live' && stream.width && stream.height && (
+        <p className="hint">
+          Now streaming {stream.width}×{stream.height}
+          {stream.fps ? ` · ${stream.fps} fps` : ''}
+          {stream.kbps ? ` · ${stream.kbps} kb/s` : ''}
+          {stream.viewers > 1 ? ` · ${stream.viewers} viewers` : ''}
+        </p>
+      )}
       {fromEnv && <p className="hint">Set in .env</p>}
       {done && <p role="status">Saved. The picture changes in a few seconds.</p>}
       {error && (

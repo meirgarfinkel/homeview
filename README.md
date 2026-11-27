@@ -26,7 +26,7 @@ cameras too.
 - Live video and sound in the browser, with a sound meter and an alert when
   it gets loud
 - Pan and tilt the camera with on-screen buttons or the arrow keys
-- Fullscreen, picture-in-picture and snapshots
+- Tap the picture for fullscreen; snapshot and picture-in-picture buttons up top
 - Works on phones, tablets and computers on your home network
 - Optional viewing away from home, with nothing to install on the phone
 - Protected by a password of your choice

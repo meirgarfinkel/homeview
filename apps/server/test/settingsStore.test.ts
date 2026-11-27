@@ -27,6 +27,12 @@ const reversing: SecretProtector = {
 };
 
 describe('SettingsStore', () => {
+  it('keeps the camera default size across a save and load', () => {
+    const store = new SettingsStore(tmp(), undefined, silentLogger);
+    store.save({ cameraDefaultSize: '1280x720' });
+    expect(store.load().cameraDefaultSize).toBe('1280x720');
+  });
+
   it('keeps the stream resolution across a save and load', () => {
     const store = new SettingsStore(tmp(), undefined, silentLogger);
     store.save({ streamResolution: '1080P' });
@@ -155,7 +161,12 @@ describe('SettingsStore', () => {
 
 describe('withCamera', () => {
   const kasa = { username: 'u', password: 'p', alias: 'Nursery', localOnly: false };
-  const saved = { viewerPasswordHash: 'h', camera: kasa, streamResolution: '2560x1440' as const };
+  const saved = {
+    viewerPasswordHash: 'h',
+    camera: kasa,
+    streamResolution: '2560x1440' as const,
+    cameraDefaultSize: '1280x720',
+  };
 
   it('keeps the video quality for a new login to the same camera', () => {
     expect(withCamera(saved, { ...kasa, password: 'new' })).toEqual({
@@ -167,6 +178,7 @@ describe('withCamera', () => {
   it('drops the video quality for a different camera', () => {
     const next = withCamera(saved, { ...kasa, alias: 'Kitchen' });
     expect(next.streamResolution).toBeUndefined();
+    expect(next.cameraDefaultSize).toBeUndefined();
     expect(next.viewerPasswordHash).toBe('h');
     expect(next.camera?.alias).toBe('Kitchen');
   });

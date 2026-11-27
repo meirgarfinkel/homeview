@@ -21,6 +21,7 @@ const base: SettingsResponse = {
   autostart: false,
   version: null,
   streamResolution: null,
+  cameraDefaultSize: null,
   managedByEnv: [],
 };
 let settings: SettingsResponse;

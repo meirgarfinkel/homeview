@@ -151,6 +151,7 @@ export async function registerSettingsRoutes(
       streamResolution:
         (config.camera.streamResolution as SettingsResponse['streamResolution'] | undefined) ??
         null,
+      cameraDefaultSize: settings.load().cameraDefaultSize ?? null,
       managedByEnv: [
         ...(config.fromEnv.viewerPassword ? (['viewerPassword'] as const) : []),
         ...(config.fromEnv.camera ? (['camera'] as const) : []),

@@ -50,6 +50,8 @@ export interface LiveHubOptions {
   logger: Logger;
   /** Keep the camera connected this long after the last viewer leaves. */
   idleTimeoutMs?: number;
+  /** Called with the picture size whenever the video format is detected. */
+  onVideoSize?: (width: number, height: number) => void;
   /** A viewer with more than this many bytes queued starts losing frames. */
   maxViewerBufferBytes?: number;
   /** Upper bound for the cached GOP. */
@@ -386,6 +388,12 @@ export class LiveHub {
       state.viewer.sendJson(this.codec);
       state.viewer.sendBinary(this.init);
       state.needsKeyframe = true;
+    }
+    // Last, and guarded: a failure here must never stop the picture.
+    try {
+      this.opts.onVideoSize?.(info.width, info.height);
+    } catch (err) {
+      this.opts.logger.warn({ err }, 'The video size callback failed');
     }
   }
 

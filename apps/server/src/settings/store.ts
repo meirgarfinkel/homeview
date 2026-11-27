@@ -52,11 +52,13 @@ export interface Settings {
   camera?: CameraSettings;
   /** The stream size chosen in Settings. Missing means the camera's default. */
   streamResolution?: StreamResolution;
+  /** The size the camera sent at its default, as "1280x720", once seen. */
+  cameraDefaultSize?: string;
 }
 
 /**
  * The settings with a new or re-entered camera. The chosen video quality stays only for the same
- * camera: a size one camera supports may be one the next can't stream.
+ * camera: a size one camera supports may be one the next can't stream, and its default may differ.
  */
 export function withCamera(saved: Settings, camera: CameraSettings): Settings {
   const before = saved.camera;
@@ -66,10 +68,11 @@ export function withCamera(saved: Settings, camera: CameraSettings): Settings {
     ((camera.kind ?? 'kasa') === 'kasa'
       ? before.alias === camera.alias
       : JSON.stringify(before.onvif?.identity) === JSON.stringify(camera.onvif?.identity));
-  const { streamResolution, ...rest } = saved;
+  const { streamResolution, cameraDefaultSize, ...rest } = saved;
   return {
     ...rest,
     ...(same && streamResolution !== undefined ? { streamResolution } : {}),
+    ...(same && cameraDefaultSize !== undefined ? { cameraDefaultSize } : {}),
     camera,
   };
 }
@@ -89,6 +92,10 @@ const onvifSchema = z.object({
 const diskSchema = z.object({
   viewerPasswordHash: z.string().optional(),
   streamResolution: z.enum(STREAM_RESOLUTIONS).optional(),
+  cameraDefaultSize: z
+    .string()
+    .regex(/^\d+x\d+$/)
+    .optional(),
   camera: z
     .object({
       username: z.string(),
@@ -140,6 +147,9 @@ export class SettingsStore {
     if (parsed.streamResolution !== undefined) {
       settings.streamResolution = parsed.streamResolution;
     }
+    if (parsed.cameraDefaultSize !== undefined) {
+      settings.cameraDefaultSize = parsed.cameraDefaultSize;
+    }
     const cam = parsed.camera;
     if (cam) {
       const password = this.decrypt(cam.passwordProtected, cam.protector);
@@ -170,6 +180,9 @@ export class SettingsStore {
         ? { viewerPasswordHash: next.viewerPasswordHash }
         : {}),
       ...(next.streamResolution !== undefined ? { streamResolution: next.streamResolution } : {}),
+      ...(next.cameraDefaultSize !== undefined
+        ? { cameraDefaultSize: next.cameraDefaultSize }
+        : {}),
       ...(next.camera === undefined
         ? this.undecryptableCamera()
         : {

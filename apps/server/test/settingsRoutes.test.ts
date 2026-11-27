@@ -131,6 +131,7 @@ describe('GET /api/settings', () => {
       autostart: null,
       version: null,
       streamResolution: null,
+      cameraDefaultSize: null,
       managedByEnv: [],
     });
   });
