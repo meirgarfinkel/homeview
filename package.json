@@ -1,6 +1,6 @@
 {
   "name": "homeview",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "HomeView: watch your home camera from any screen at home, and from away. No cloud.",
