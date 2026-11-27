@@ -405,6 +405,7 @@ function settingsGroups(
             <VideoQuality
               saved={settings.streamResolution}
               fromEnv={settings.managedByEnv.includes('streamResolution')}
+              defaultSize={settings.cameraDefaultSize}
             />
           </Section>
         ),
