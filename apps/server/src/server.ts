@@ -240,9 +240,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           logger: logger.child({ component: 'hub' }),
           idleTimeoutMs: config.idleDisconnectMs,
           onVideoSize: (width, height) => {
-            const saved = settings.load();
-            const size = defaultSizeToSave(config, saved, width, height);
-            if (size) settings.save({ ...saved, cameraDefaultSize: size });
+            try {
+              const saved = settings.load();
+              const size = defaultSizeToSave(config, saved, width, height);
+              if (size) settings.save({ ...saved, cameraDefaultSize: size });
+            } catch (err) {
+              logger.warn({ err }, "Couldn't save the camera's default size");
+            }
           },
         });
       } catch (err) {

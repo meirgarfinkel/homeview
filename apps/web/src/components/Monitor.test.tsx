@@ -97,3 +97,15 @@ it("uses the iPhone's video fullscreen when a box can't go fullscreen", () => {
   delete (HTMLVideoElement.prototype as unknown as { webkitEnterFullscreen?: () => void })
     .webkitEnterFullscreen;
 });
+
+it('lets the keyboard reach fullscreen on the video', () => {
+  const requestFullscreen = vi.fn(() => Promise.resolve());
+  HTMLElement.prototype.requestFullscreen = requestFullscreen;
+  render(<Monitor />);
+  const stage = screen.getByRole('button', { name: 'Fullscreen' });
+  expect(stage.tabIndex).toBe(0);
+  fireEvent.keyDown(stage, { key: 'Enter' });
+  fireEvent.keyDown(stage, { key: ' ' });
+  expect(requestFullscreen).toHaveBeenCalledTimes(2);
+  delete (HTMLElement.prototype as Partial<HTMLElement>).requestFullscreen;
+});

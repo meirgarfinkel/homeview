@@ -379,7 +379,6 @@ export class LiveHub {
       { codec: info.codec, width: info.width, height: info.height },
       'Video format detected',
     );
-    this.opts.onVideoSize?.(info.width, info.height);
     // Any queued frame belongs to the old format.
     this.pending = undefined;
     this.waitingForKeyframe = true;
@@ -389,6 +388,12 @@ export class LiveHub {
       state.viewer.sendJson(this.codec);
       state.viewer.sendBinary(this.init);
       state.needsKeyframe = true;
+    }
+    // Last, and guarded: a failure here must never stop the picture.
+    try {
+      this.opts.onVideoSize?.(info.width, info.height);
+    } catch (err) {
+      this.opts.logger.warn({ err }, 'The video size callback failed');
     }
   }
 

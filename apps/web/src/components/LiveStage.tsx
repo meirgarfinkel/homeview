@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from 'react';
+import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 import type { LiveStream } from '../hooks/useLiveStream';
 
 /** What to tell the viewer while the picture isn't live yet. Undefined once it is. */
@@ -32,7 +32,23 @@ export function LiveStage({
 }) {
   const overlay = overlayFor(live);
   return (
-    <div className={`stage${onTap ? ' stage-tap' : ''}`} ref={stageRef} onClick={onTap}>
+    <div
+      className={`stage${onTap ? ' stage-tap' : ''}`}
+      ref={stageRef}
+      onClick={onTap}
+      {...(onTap
+        ? {
+            role: 'button',
+            tabIndex: 0,
+            'aria-label': 'Fullscreen',
+            onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+              if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+              e.preventDefault();
+              onTap();
+            },
+          }
+        : {})}
+    >
       <video ref={videoRef} muted playsInline autoPlay disablePictureInPicture={false} />
       {overlay && (
         <div className={`overlay overlay-${overlay.tone}`}>

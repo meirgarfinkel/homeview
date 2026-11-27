@@ -65,6 +65,19 @@ afterEach(() => {
 });
 
 describe('LiveHub', () => {
+  it('keeps streaming when the size callback throws', () => {
+    const { source, hub } = setup({
+      onVideoSize: () => {
+        throw new Error('disk full');
+      },
+    });
+    const viewer = new RecordingViewer();
+    hub.addViewer(viewer);
+    feed(source, 0, 10);
+    expect(viewer.json.some((m) => m['type'] === 'codec')).toBe(true);
+    expect(viewer.binary.length).toBeGreaterThan(1);
+  });
+
   it('reports the video size once it knows it', () => {
     const onVideoSize = vi.fn();
     const { source, hub } = setup({ onVideoSize });
